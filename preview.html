@@ -965,8 +965,8 @@ function updateAutoBackupUI(){
 /* 自动备份（每次做题后触发，防抖 30 秒避免 GitHub API 速率限制） */
 let autoBackupTimer = null;
 let lastBackupTime = 0;
-const AUTO_BACKUP_DEBOUNCE = 30000;  // 30 秒防抖
-const AUTO_BACKUP_MIN_INTERVAL = 60000;  // 最少间隔 60 秒
+const AUTO_BACKUP_DEBOUNCE = 300000;  // 5 分钟防抖（做题后 5 分钟才备份）
+const AUTO_BACKUP_MIN_INTERVAL = 600000;  // 最少间隔 10 分钟（避免 GitHub API 速率限制）
 
 function scheduleAutoBackup(){
     if(!autoBackupEnabled || !currentUsername) return;
