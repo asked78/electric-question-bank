@@ -886,7 +886,7 @@ function showOcrStatus(type, msg){
     el.innerHTML = msg;
 }
 
-/* 选图后预览 */
+/* 选图后预览 + 自动完成全部流程 */
 function onOcrFileChange(input){
     const file = input.files[0];
     if(!file){ return; }
@@ -900,21 +900,25 @@ function onOcrFileChange(input){
         const img = document.getElementById('ocrPreview');
         img.src = ocrCurrentImage;
         img.style.display = 'block';
-        hideOcrStatus();
+        // ★ 一键全自动：识别 → 解析 → 入题库
+        autoOcrAll();
     };
     reader.readAsDataURL(file);
 }
 
-/* 调用 OCR */
-async function doOcr(){
+/* 全自动流程：识别 + 解析 + 入题库 */
+async function autoOcrAll(){
     if(!ocrCurrentImage){
         showOcrStatus('error', '❌ 请先选择图片');
         return;
     }
+    // 显示进度
+    showOcrStatus('loading', '<span class="loading-spinner"></span>正在识别文字...');
     const btn = document.getElementById('btnOcr');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="loading-spinner"></span>识别中...';
-    showOcrStatus('loading', '<span class="loading-spinner"></span>正在调用百度 OCR 识别，请稍候...');
+    if(btn){ btn.disabled = true; btn.innerHTML = '<span class="loading-spinner"></span>识别中...'; }
+
+    // 步骤 1：OCR 识别
+    let words;
     try{
         const resp = await fetch(OCR_API, {
             method: 'POST',
@@ -923,47 +927,74 @@ async function doOcr(){
         });
         const data = await resp.json();
         if(!resp.ok || data.error){
-            showOcrStatus('error', '❌ 识别失败：' + (data.error || '未知错误'));
+            showOcrStatus('error', '❌ 识别失败：' + (data.error || '未知错误') + '<br><small>请检查图片是否清晰，或稍后重试</small>');
+            if(btn){ btn.disabled = false; btn.innerHTML = '🔍 重新识别'; }
             return;
         }
-        const words = data.words || data.lines || [];
-        const text = words.join('\n');
-        document.getElementById('ocrRawText').value = text;
-        showOcrStatus('success', `✓ 识别成功，共 ${words.length} 行文字。点击下方"智能解析"`);
-        // 自动调用解析
-        autoParse();
+        words = data.words || data.lines || [];
+        document.getElementById('ocrRawText').value = words.join('\n');
     }catch(e){
-        showOcrStatus('error', '❌ 网络错误：' + e.message + '<br><small>如果 GitHub Pages 访问，OCR 接口不可用。请用 Vercel 部署的地址。</small>');
-    }finally{
-        btn.disabled = false;
-        btn.innerHTML = '🔍 开始识别';
+        showOcrStatus('error', '❌ 网络错误：' + e.message + '<br><small>请用 Vercel 部署的地址访问，GitHub Pages 不支持 OCR</small>');
+        if(btn){ btn.disabled = false; btn.innerHTML = '🔍 重新识别'; }
+        return;
+    }
+
+    // 步骤 2：智能解析
+    showOcrStatus('loading', '<span class="loading-spinner"></span>识别成功 ✓ 正在解析题目...');
+    const parsed = smartParse(words);
+    if(!parsed){
+        // 解析失败 → 让用户手动填写
+        showOcrStatus('error', '⚠️ 无法自动解析题目结构，请手动填写下方表单');
+        document.getElementById('parseType').value = '单选';
+        document.getElementById('parseQ').value = words.join(' ');
+        renderParseOpts(['', '', '', '']);
+        if(btn){ btn.disabled = false; btn.innerHTML = '🔍 重新识别'; }
+        return;
+    }
+
+    // 填充 UI（供用户查看）
+    document.getElementById('parseType').value = parsed.type;
+    document.getElementById('parseQ').value = parsed.q;
+    renderParseOpts(parsed.opts);
+    rebuildAnsSelect(parsed.opts.length, parsed.ans);
+    document.getElementById('parseAns').value = parsed.ans;
+    document.getElementById('parseExpl').value = parsed.expl || '';
+
+    // 步骤 3：自动入题库
+    showOcrStatus('loading', '<span class="loading-spinner"></span>解析完成 ✓ 正在加入题库...');
+    const result = addToBank(parsed);
+    if(result.success){
+        showOcrStatus('success',
+            `✅ 已自动加入题库！<br>` +
+            `<small>题干：${escapeHtml(parsed.q.substring(0, 40))}${parsed.q.length > 40 ? '...' : ''}<br>` +
+            `类型：${parsed.type} | 答案：${String.fromCharCode(65 + parsed.ans)}</small><br>` +
+            `<small>可在「最近新增」Tab 查看，或点「再传一张」继续</small>`
+        );
+        if(btn){ btn.disabled = false; btn.innerHTML = '📷 再传一张'; }
+        // 自动跳到最近新增
+        setTimeout(() => {
+            closeOcrModal();
+            switchTab('recent');
+            renderRecent();
+        }, 1800);
+    }else{
+        showOcrStatus('error', '❌ 入题库失败：' + result.error);
+        if(btn){ btn.disabled = false; btn.innerHTML = '🔍 重新识别'; }
     }
 }
 
-/* 智能解析 OCR 文字 */
-function autoParse(){
-    const raw = document.getElementById('ocrRawText').value.trim();
-    if(!raw){
-        showOcrStatus('error', '❌ 识别结果为空，无法解析');
-        return;
-    }
-    const lines = raw.split('\n').map(s => s.trim()).filter(s => s.length > 0);
-    if(lines.length === 0){
-        showOcrStatus('error', '❌ 没有有效文字行');
-        return;
-    }
+/* 智能解析（纯函数，返回 {type,q,opts,ans,expl} 或 null） */
+function smartParse(words){
+    if(!words || words.length === 0) return null;
+    const lines = words.map(s => s.trim()).filter(s => s.length > 0);
 
-    // 找选项行：A. xxx / A、xxx / A) xxx / A: xxx
     const optRegex = /^([A-D])[\.、\)\::\s]\s*(.+)$/;
-    // 判断题选项
     const judgeOpts = ['正确', '错误', '对', '错', '√', '×'];
-    // 答案标记：答案：A / 正确答案：A / （A）/ ( A ) / 答：A
     const ansRegexList = [
         /(?:答案|正确答案|参考答案|答)\s*[是:：为]\s*([A-D正确错误对错√×])/,
         /[（(]\s*([A-D正确错误对错√×])\s*[）)]/
     ];
 
-    // 收集选项
     let opts = [];
     let optStartIdx = -1;
     for(let i = 0; i < lines.length; i++){
@@ -972,11 +1003,11 @@ function autoParse(){
             if(optStartIdx === -1) optStartIdx = i;
             const letter = m[1];
             const text = m[2].trim();
-            const idx = letter.charCodeAt(0) - 65;  // A=0, B=1...
+            const idx = letter.charCodeAt(0) - 65;
             opts[idx] = text;
         }
     }
-    // 判断题：找"正确"/"错误"
+    // 判断题选项
     if(opts.length === 0){
         for(let i = 0; i < lines.length; i++){
             if(judgeOpts.includes(lines[i])){
@@ -988,20 +1019,15 @@ function autoParse(){
     }
 
     // 答案标号
-    let ans = 0;
-    let ansFound = false;
+    let ans = 0, ansFound = false;
     for(const re of ansRegexList){
         for(const line of lines){
             const m = line.match(re);
             if(m){
                 const a = m[1];
-                if(['A','B','C','D'].includes(a)){
-                    ans = a.charCodeAt(0) - 65;
-                }else if(a === '正确' || a === '对' || a === '√'){
-                    ans = 0;
-                }else if(a === '错误' || a === '错' || a === '×'){
-                    ans = 1;
-                }
+                if(['A','B','C','D'].includes(a)) ans = a.charCodeAt(0) - 65;
+                else if(a === '正确' || a === '对' || a === '√') ans = 0;
+                else if(a === '错误' || a === '错' || a === '×') ans = 1;
                 ansFound = true;
                 break;
             }
@@ -1009,17 +1035,10 @@ function autoParse(){
         if(ansFound) break;
     }
 
-    // 题干 = optStartIdx 之前的所有行
-    let q = '';
-    if(optStartIdx > 0){
-        q = lines.slice(0, optStartIdx).join(' ');
-    }else{
-        // 没找到选项，全部当题干
-        q = lines.join(' ');
-    }
-
-    // 清理题干首尾的题号（如 "1." "23、"）
+    // 题干
+    let q = optStartIdx > 0 ? lines.slice(0, optStartIdx).join(' ') : lines.join(' ');
     q = q.replace(/^[\d]+[\.、\::\s]+/, '').trim();
+    if(!q) return null;
 
     // 类型判断
     let type = '单选';
@@ -1027,20 +1046,51 @@ function autoParse(){
         type = '判断';
         opts = ['正确', '错误'];
     }else if(opts.length < 2){
-        // 选项太少，保留 4 个空槽让用户填
-        const padded = ['', '', '', ''];
-        opts.forEach((o, i) => padded[i] = o);
-        opts = padded;
+        return null;   // 解析不出选项，让用户手动填
     }
 
-    // 填充 UI
-    document.getElementById('parseType').value = type;
-    document.getElementById('parseQ').value = q;
-    renderParseOpts(opts);
-    // 调整答案下拉
-    rebuildAnsSelect(opts.length, ans);
-    showOcrStatus('success', `✓ 解析完成：${type} / ${opts.length}个选项 / 答案 ${String.fromCharCode(65+ans)}`);
+    return { type, q, opts, ans, expl: '【解析】待补充（OCR 自动添加）' };
 }
+
+/* 把解析结果加入题库 */
+function addToBank(parsed){
+    const type = parsed.type;
+    const q = parsed.q.trim();
+    const opts = parsed.opts.filter(o => o && o.length > 0);
+    const ans = parseInt(parsed.ans);
+
+    if(!q) return { success: false, error: '题干为空' };
+    if(opts.length < 2) return { success: false, error: '选项不足 2 个' };
+    if(isNaN(ans) || ans < 0 || ans >= opts.length) return { success: false, error: '答案标号无效' };
+
+    // 标准化选项
+    let finalOpts = opts;
+    if(type === '单选'){
+        finalOpts = opts.map((o, i) => {
+            const letter = String.fromCharCode(65 + i);
+            if(/^([A-D])[\.、\)\::\s]/.test(o)) return o;
+            return letter + ' ' + o;
+        });
+    }else if(type === '判断'){
+        finalOpts = ['正确', '错误'];
+    }
+
+    const newQ = {
+        type: type,
+        q: q,
+        opts: finalOpts,
+        ans: ans,
+        expl: parsed.expl || '【解析】待补充',
+        addedAt: Date.now()
+    };
+    questions.push(newQ);
+    saveBank();
+    rebuildRecent();
+    rebuildAllVisible();
+    updateAllUI();
+    return { success: true };
+}
+
 
 function renderParseOpts(opts){
     const container = document.getElementById('parseOptsContainer');
@@ -1170,52 +1220,47 @@ function addParsedToBank(){
 }
 </script>
 
-<!-- OCR 上传 Modal -->
+<!-- OCR 上传 Modal（极简版） -->
 <div id="ocrModal" class="modal-mask" style="display:none">
     <div class="modal-body">
         <h3>
-            <span>📷 上传题目截图</span>
+            <span>📷 拍/选题目截图</span>
             <button class="close-x" onclick="closeOcrModal()">×</button>
         </h3>
 
-        <!-- 步骤 1：选图 -->
-        <div class="modal-step">
-            <div class="modal-step-title"><span class="step-num">1</span>选择题目截图</div>
-            <input type="file" id="ocrFile" class="ocr-input" accept="image/*" onchange="onOcrFileChange(this)">
-            <img id="ocrPreview" class="ocr-preview-img" style="display:none">
-            <button id="btnOcr" class="ocr-btn ocr-btn-primary" onclick="doOcr()">🔍 开始识别</button>
-        </div>
-
-        <!-- 步骤 2：识别结果 -->
-        <div class="modal-step">
-            <div class="modal-step-title"><span class="step-num">2</span>识别结果（可手动修正）</div>
-            <textarea id="ocrRawText" class="ocr-textarea" placeholder="点击"开始识别"后，文字会显示在这里..."></textarea>
-            <button class="ocr-btn ocr-btn-parse" onclick="autoParse()">🤖 智能解析为题目</button>
-        </div>
+        <!-- 选图（选完自动完成全流程） -->
+        <input type="file" id="ocrFile" class="ocr-input" accept="image/*" onchange="onOcrFileChange(this)" capture="environment">
+        <img id="ocrPreview" class="ocr-preview-img" style="display:none">
 
         <!-- 状态提示 -->
         <div id="ocrStatus" class="ocr-status"></div>
 
-        <!-- 步骤 3：解析后字段（可编辑） -->
-        <div class="modal-step">
-            <div class="modal-step-title"><span class="step-num">3</span>确认题目信息</div>
-            <div class="row-2col">
-                <select id="parseType" class="ocr-input" onchange="onParseTypeChange(this)">
-                    <option value="单选">单选题</option>
-                    <option value="判断">判断题</option>
-                </select>
-                <select id="parseAns" class="ocr-input">
-                    <option value="0">答案 A</option>
-                </select>
+        <!-- 隐藏的备用按钮（自动流程中切换显示） -->
+        <button id="btnOcr" class="ocr-btn ocr-btn-primary" style="display:none">🔍 开始识别</button>
+
+        <!-- 详情区（默认折叠，识别失败时让用户手动填） -->
+        <details id="ocrDetails" style="margin-top:10px">
+            <summary style="cursor:pointer;color:#6b7280;font-size:13px;padding:6px">📝 手动编辑（识别失败时用）</summary>
+            <div style="margin-top:10px">
+                <div class="row-2col">
+                    <select id="parseType" class="ocr-input" onchange="onParseTypeChange(this)">
+                        <option value="单选">单选题</option>
+                        <option value="判断">判断题</option>
+                    </select>
+                    <select id="parseAns" class="ocr-input">
+                        <option value="0">答案 A</option>
+                    </select>
+                </div>
+                <textarea id="parseQ" class="ocr-textarea" placeholder="题干"></textarea>
+                <div id="parseOptsContainer"></div>
+                <textarea id="parseExpl" class="ocr-textarea" placeholder="解析（可选）"></textarea>
+                <textarea id="ocrRawText" class="ocr-textarea" placeholder="识别原始文字" style="min-height:60px;font-size:12px;color:#888"></textarea>
+                <button class="ocr-btn ocr-btn-success" onclick="addParsedToBank()">✅ 手动加入题库</button>
             </div>
-            <textarea id="parseQ" class="ocr-textarea" placeholder="题干（自动解析，可修改）"></textarea>
-            <div id="parseOptsContainer"></div>
-            <textarea id="parseExpl" class="ocr-textarea" placeholder="解析（可选，可后续补充）"></textarea>
-        </div>
+        </details>
 
         <div class="modal-footer">
-            <button class="ocr-btn ocr-btn-success" onclick="addParsedToBank()">✅ 加入题库</button>
-            <button class="ocr-btn" style="background:#6b7280;color:#fff" onclick="closeOcrModal()">取消</button>
+            <button class="ocr-btn" style="background:#6b7280;color:#fff" onclick="closeOcrModal()">关闭</button>
         </div>
     </div>
 </div>
