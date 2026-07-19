@@ -199,6 +199,16 @@
     <div class="reset-wrap">
         <button style="padding:13px;background:#f97316;color:#fff;border:none;border-radius:8px;width:100%;font-size:15px" onclick="clearUserAddedQuestions()">🧹 清空所有用户添加的题目（恢复到 71 道种子题）</button>
     </div>
+
+    <!-- 云端备份/恢复（用 GitHub Gist） -->
+    <div style="margin-top:20px;padding:15px;background:#f0f9ff;border-radius:10px;border:1px solid #bae6fd">
+        <div style="font-size:15px;font-weight:600;color:#0369a1;margin-bottom:8px">☁️ 做题记录云端备份</div>
+        <div style="font-size:12px;color:#64748b;margin-bottom:12px">每次做题自动同步到云端，换设备也能恢复</div>
+        <button id="cloudBackupBtn" style="padding:12px;background:#0284c7;color:#fff;border:none;border-radius:8px;width:100%;font-size:14px;margin-bottom:8px" onclick="cloudBackup()">☁️ 立即备份到云端</button>
+        <button id="cloudRestoreBtn" style="padding:12px;background:#16a34a;color:#fff;border:none;border-radius:8px;width:100%;font-size:14px;margin-bottom:8px" onclick="cloudRestore()">🔄 从云端恢复</button>
+        <button id="cloudAutoToggle" style="padding:10px;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:8px;width:100%;font-size:13px" onclick="toggleAutoBackup()">⚙️ 自动备份：开启中</button>
+        <div id="cloudStatus" style="margin-top:8px;font-size:12px;color:#64748b;text-align:center"></div>
+    </div>
 </div>
 
 <!-- 回收站 -->
@@ -434,9 +444,9 @@ function loadStorage(){
     updateAllUI();
 }
 
-function saveStorage(){localStorage.setItem(STORAGE_KEY,JSON.stringify(wrongList));updateWrongUI();}
-function saveFinish(){localStorage.setItem(FINISH_KEY,JSON.stringify(finished));updateFinishUI();}
-function saveFav(){localStorage.setItem(FAV_KEY,JSON.stringify(favoriteList));updateFavUI();}
+function saveStorage(){localStorage.setItem(STORAGE_KEY,JSON.stringify(wrongList));updateWrongUI();scheduleAutoBackup();}
+function saveFinish(){localStorage.setItem(FINISH_KEY,JSON.stringify(finished));updateFinishUI();scheduleAutoBackup();}
+function saveFav(){localStorage.setItem(FAV_KEY,JSON.stringify(favoriteList));updateFavUI();scheduleAutoBackup();}
 function saveRecycle(){localStorage.setItem(REC_KEY,JSON.stringify(recycleList));updateRecycleUI();}
 function saveBank(){localStorage.setItem(QB_KEY,JSON.stringify(questions));}
 
@@ -661,6 +671,154 @@ function redoAllFinish(){
     if(finished.length===0){alert("无已完成题目");return;}
     if(!confirm("确认重置所有完成标记？")) return;
     finished=[];saveFinish();alert("全部恢复未做");renderAll();
+}
+
+/* =========================================================
+   云端备份/恢复（用 GitHub Gist）
+   ========================================================= */
+const GIST_ID = "3d534e4ab1aca5964ab6378dc8bd75e8";  // 你的 Gist ID
+const GIST_FILENAME = "initial_progress.json";
+let gistToken = localStorage.getItem("electric_gist_token") || "";
+let autoBackupEnabled = localStorage.getItem("electric_auto_backup") !== "off";
+
+/* 收集当前所有做题数据 */
+function collectProgressData(){
+    return {
+        version: 2,
+        lastUpdated: new Date().toISOString(),
+        device: navigator.userAgent.substring(0, 50),
+        wrongList: wrongList,
+        finished: finished,
+        favoriteList: favoriteList,
+        recycleList: recycleList.map(r => ({q: r.q, deletedAt: r.deletedAt})),  // 只存题干+时间
+        stats: {
+            totalQuestions: questions.length,
+            completedCount: finished.length,
+            wrongCount: wrongList.length,
+            favoriteCount: favoriteList.length
+        }
+    };
+}
+
+/* 应用云端数据到本地 */
+function applyProgressData(data){
+    if(!data || data.version !== 2){
+        alert("云端数据版本不兼容");
+        return false;
+    }
+    if(!confirm(`从云端恢复做题记录？\n\n云端备份时间：${new Date(data.lastUpdated).toLocaleString()}\n完成：${data.stats?.completedCount || 0} 题\n错题：${data.stats?.wrongCount || 0} 题\n收藏：${data.stats?.favoriteCount || 0} 题\n\n注意：这会覆盖当前的本地记录`)){
+        return false;
+    }
+    wrongList = data.wrongList || [];
+    finished = data.finished || [];
+    favoriteList = data.favoriteList || [];
+    // 清理越界 id
+    const validIds = new Set(questions.map(q => q.id));
+    wrongList = wrongList.filter(id => validIds.has(id));
+    finished = finished.filter(id => validIds.has(id));
+    favoriteList = favoriteList.filter(id => validIds.has(id));
+    saveStorage(); saveFinish(); saveFav();
+    rebuildRecent(); rebuildAllVisible(); updateAllUI();
+    renderAll();
+    return true;
+}
+
+/* 备份到云端（通过 GitHub Gist API） */
+async function cloudBackup(){
+    if(!gistToken){
+        const token = prompt("首次使用云端备份，需要配置 GitHub Token\n\n请前往 https://github.com/settings/tokens/new\n1. 勾选 gist 权限\n2. 创建 token\n3. 把 token 粘贴到这里：");
+        if(!token) return;
+        gistToken = token.trim();
+        localStorage.setItem("electric_gist_token", gistToken);
+    }
+    const btn = document.getElementById("cloudBackupBtn");
+    const status = document.getElementById("cloudStatus");
+    btn.disabled = true;
+    btn.innerHTML = "⏳ 备份中...";
+    status.innerText = "正在上传到云端...";
+    try{
+        const data = collectProgressData();
+        const resp = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+            method: 'PATCH',
+            headers: {
+                'Authorization': `Bearer ${gistToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                description: "高压电工错题集 - 做题记录云端同步",
+                files: {
+                    [GIST_FILENAME]: {
+                        content: JSON.stringify(data, null, 2)
+                    }
+                }
+            })
+        });
+        if(!resp.ok){
+            const err = await resp.json();
+            throw new Error(err.message || `HTTP ${resp.status}`);
+        }
+        const time = new Date().toLocaleString();
+        localStorage.setItem("electric_last_backup", time);
+        status.innerHTML = `✅ 备份成功！${time}<br>完成 ${data.stats.completedCount} 题 / 错题 ${data.stats.wrongCount} / 收藏 ${data.stats.favoriteCount}`;
+        btn.innerHTML = "☁️ 立即备份到云端";
+    }catch(e){
+        status.innerHTML = `❌ 备份失败：${e.message}<br><small>Token 可能失效，请前往 GitHub 重新生成</small>`;
+        btn.innerHTML = "☁️ 立即备份到云端";
+        if(e.message.includes('Bad credentials') || e.message.includes('401')){
+            localStorage.removeItem("electric_gist_token");
+            gistToken = "";
+        }
+    }finally{
+        btn.disabled = false;
+    }
+}
+
+/* 从云端恢复 */
+async function cloudRestore(){
+    const btn = document.getElementById("cloudRestoreBtn");
+    const status = document.getElementById("cloudStatus");
+    btn.disabled = true;
+    btn.innerHTML = "⏳ 恢复中...";
+    status.innerText = "正在从云端下载...";
+    try{
+        const resp = await fetch(`https://gist.githubusercontent.com/asked78/${GIST_ID}/raw/${GIST_FILENAME}`, {
+            cache: 'no-store'
+        });
+        if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        const success = applyProgressData(data);
+        if(success){
+            status.innerHTML = `✅ 恢复成功！<br>完成 ${data.stats?.completedCount || 0} 题`;
+        }
+    }catch(e){
+        status.innerHTML = `❌ 恢复失败：${e.message}`;
+    }finally{
+        btn.disabled = false;
+        btn.innerHTML = "🔄 从云端恢复";
+    }
+}
+
+/* 自动备份开关 */
+function toggleAutoBackup(){
+    autoBackupEnabled = !autoBackupEnabled;
+    localStorage.setItem("electric_auto_backup", autoBackupEnabled ? "on" : "off");
+    updateAutoBackupUI();
+    alert(autoBackupEnabled ? "✅ 已开启自动备份" : "❌ 已关闭自动备份");
+}
+function updateAutoBackupUI(){
+    const btn = document.getElementById("cloudAutoToggle");
+    if(btn) btn.innerHTML = `⚙️ 自动备份：${autoBackupEnabled ? '开启中' : '已关闭'}`;
+}
+
+/* 自动备份（每次做题后触发） */
+let autoBackupTimer = null;
+function scheduleAutoBackup(){
+    if(!autoBackupEnabled || !gistToken) return;
+    // 防抖：3 秒内多次做题只备份一次
+    if(autoBackupTimer) clearTimeout(autoBackupTimer);
+    autoBackupTimer = setTimeout(() => {
+        cloudBackup();
+    }, 3000);
 }
 
 /* =========================================================
@@ -952,6 +1110,17 @@ window.onload = function(){
     loadStorage();
     updateAllUI();   // 确保所有 Tab 的数字都正确显示
     renderAll();
+    // 初始化云端备份 UI
+    updateAutoBackupUI();
+    const lastBackup = localStorage.getItem("electric_last_backup");
+    const status = document.getElementById("cloudStatus");
+    if(status){
+        if(lastBackup){
+            status.innerHTML = `📅 上次备份：${lastBackup}<br><small>点「立即备份」可手动同步</small>`;
+        }else if(!gistToken){
+            status.innerHTML = `<small>首次使用请点「立即备份」，配置 GitHub Token</small>`;
+        }
+    }
 };
 
 /* =========================================================
