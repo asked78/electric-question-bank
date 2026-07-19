@@ -508,6 +508,11 @@ function emptyRecycle(){
    UI 计数刷新
    ========================================================= */
 function updateAllUI(){
+    // 关键：始终更新全部题数（任何题目数变化都要）
+    document.getElementById('allTotalShow').innerText = questions.length;
+    document.getElementById('allTotalShow2').innerText = questions.length;
+    document.getElementById('allNum').innerText = questions.length;
+    document.getElementById('totalRecent').innerText = recentList.length;
     updateWrongUI(); updateFinishUI(); updateFavUI(); updateRecycleUI(); updateRecentUI();
 }
 function updateFinishUI(){
@@ -880,6 +885,7 @@ bindSwipe('recent', nextRecent, prevRecent);
    ========================================================= */
 window.onload = function(){
     loadStorage();
+    updateAllUI();   // 确保所有 Tab 的数字都正确显示
     renderAll();
 };
 
@@ -1111,7 +1117,10 @@ function addToBank(parsed){
         opts: finalOpts,
         ans: ans,
         expl: parsed.expl || '【解析】待补充',
-        addedAt: Date.now()
+        // ★ 让新加的题 addedAt 远超种子题，确保排在「最近新增」最前
+        // 种子题 addedAt 最大约 = now（初始化时间）
+        // 这里用 now + N*1000 偏移，确保稳定地排在最前面
+        addedAt: Date.now() + (questions.length - SEED_QUESTIONS.length + 1) * 1000000
     };
     questions.push(newQ);
     saveBank();
