@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高压电工错题集</title>
+    <style>
+        *{box-sizing:border-box;margin:0;padding:0;font-family:system-ui}
+        body{background:#f5f7fa;padding:15px;color:#222;min-height:100vh}
+        /* 顶部 Tab 横向可滚动 */
+        .tab{display:flex;gap:8px;margin-bottom:20px;overflow-x:auto;padding-bottom:6px}
+        .tab::-webkit-scrollbar{display:none}
+        .tab button{flex-shrink:0;padding:12px 14px;border:none;border-radius:8px;font-size:14px;background:#fff;color:#222;box-shadow:0 1px 3px #ddd}
+        .tab .active{background:#2563eb;color:#fff;box-shadow:0 1px 3px #2563eb55}
+        .page{display:none}
+        .page.show{display:block}
+        .q-box{background:#fff;border-radius:10px;padding:18px;margin-bottom:15px;box-shadow:0 1px 3px #ddd}
+        .q-title{font-size:16px;line-height:1.6;margin-bottom:16px;font-weight:600;display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+        .q-title-wrap{display:flex;flex:1;gap:8px;align-items:flex-start}
+        .q-title-done-tag{color:#16a34a;font-size:14px;font-weight:bold;white-space:nowrap}
+        .star-btn{font-size:22px;background:transparent;border:none;padding:0 6px;cursor:pointer;flex-shrink:0}
+        .star-off{color:#999}
+        .star-on{color:#f59e0b}
+        .opt{padding:12px 14px;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:10px;cursor:pointer;position:relative}
+        .opt.selected{border-color:#2563eb;background:#eff6ff}
+        .opt-done-mark{position:absolute;right:10px;top:8px;color:#16a34a;font-weight:bold;font-size:14px}
+        .btns{display:flex;gap:10px;margin-top:20px}
+        .btns-row2{display:flex;gap:10px;margin-top:12px}
+        .btns-row3{display:flex;gap:10px;margin-top:12px}
+        .btns-row4{display:flex;gap:10px;margin-top:12px}
+        .jump-unfinish{padding:13px;background:#10b981;color:#fff;border:none;border-radius:8px;font-size:16px;width:100%}
+        .clear-fav{padding:13px;background:#f97316;color:#fff;border:none;border-radius:8px;width:100%;margin-top:10px}
+        /* 删除本题（红色） */
+        .delete-one{padding:13px;background:#ef4444;color:#fff;border:none;border-radius:8px;width:100%;font-size:16px}
+        /* 恢复本题（绿色） */
+        .restore-one{padding:13px;background:#10b981;color:#fff;border:none;border-radius:8px;width:100%;font-size:16px}
+        button{cursor:pointer}
+        .submit{flex:1;padding:13px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:16px}
+        .next{padding:13px;background:#94a3b8;color:#fff;border:none;border-radius:8px;font-size:16px}
+        .redo-one{padding:13px;background:#0284c7;color:#fff;border:none;border-radius:8px;font-size:16px}
+        .redo-all{padding:13px;background:#f59e0b;color:#fff;border:none;border-radius:8px;width:100%}
+        .tip{margin-top:12px;padding:10px;border-radius:8px;display:none;font-size:15px;line-height:1.7}
+        .right{background:#dcfce7;color:#166534;display:block}
+        .wrong{background:#fee2e2;color:#b91c1c;display:block}
+        .count{margin-bottom:10px;color:#666}
+        .empty{text-align:center;padding:40px;color:#888;font-size:18px}
+        .analysis{margin-top:15px;padding:14px;background:#f0f7ff;border-radius:8px;display:none}
+        .analysis h4{margin-bottom:8px;color:#2563eb}
+        .analysis p{margin:6px 0;line-height:1.6}
+        .reset-wrap{margin-top:20px;display:flex;flex-direction:column;gap:10px}
+        #reset{width:100%;padding:12px;background:#ef4444;color:#fff;border:none;border-radius:8px;font-size:16px}
+        .progress{margin:8px 0 15px;color:#2563eb;font-weight:500}
+        .q-done-wrap{opacity:0.85;background:#f8fcf9 !important}
+        .swipe-hint{text-align:center;color:#999;font-size:13px;margin:14px 0 4px}
+        .meta-line{font-size:12px;color:#888;margin-top:6px}
+    </style>
+</head>
+<body>
+
+<div class="tab">
+    <button class="active" onclick="switchTab('all')">全部题目(<span id="allNum">0</span>)</button>
+    <button onclick="switchTab('wrong')">待重做错题(<span id="wrongNum">0</span>)</button>
+    <button onclick="switchTab('favorite')">收藏题目(<span id="favNum">0</span>)</button>
+    <button onclick="switchTab('recent')">最近新增(<span id="recentNum">0</span>)</button>
+    <button onclick="switchTab('recycle')">🗑回收站(<span id="recycleNum">0</span>)</button>
+</div>
+
+<!-- 全部题目页 -->
+<div id="all" class="page show">
+    <div class="progress">学习进度：<span id="finishCount">0</span>/<span id="allTotalShow">0</span> 题已完成（做完题目不会消失，可来回翻看）</div>
+    <div class="count">当前题号：<span id="allIdx">1</span> / <span id="allTotalShow2">0</span></div>
+    <div class="q-box" id="allQBox">
+        <div class="q-title">
+            <div class="q-title-wrap" id="allQ"></div>
+            <button class="star-btn star-off" id="starAllBtn" onclick="toggleFavorite(allVisibleList[allIndex])">☆</button>
+        </div>
+        <div id="allOpts"></div>
+        <div class="btns">
+            <button class="submit" onclick="checkAll()">提交答案（备用）</button>
+            <button class="next" onclick="nextAll()">下一题（优先未做题）</button>
+        </div>
+        <div class="btns-row3">
+            <button class="jump-unfinish" onclick="jumpFirstUnfinished()">直接跳转第一道未完成题目</button>
+        </div>
+        <div class="btns-row4">
+            <button class="delete-one" onclick="deleteCurrentQuestion()">🗑 删除本题（从题库永久移除）</button>
+        </div>
+        <div class="btns-row2">
+            <button class="redo-one" onclick="redoCurrentQuestion()">取消本题完成标记，重新刷题</button>
+        </div>
+        <div class="tip" id="allTip"></div>
+        <div class="analysis" id="allAnalysis"></div>
+    </div>
+    <div class="swipe-hint">← 右滑上一题 | 左滑下一题 →</div>
+    <div class="reset-wrap">
+        <button class="redo-all" onclick="redoAllFinish()">把所有已完成题目恢复为未完成，全部重做</button>
+        <button id="reset" onclick="clearStorage()">清空所有做题记录（重置错题+完成记录，收藏/回收站/最近新增不清除）</button>
+    </div>
+</div>
+
+<!-- 错题重做页 -->
+<div id="wrong" class="page">
+    <div class="count">错题剩余：<span id="wrongIdx">0</span> / <span id="totalWrong">0</span></div>
+    <div class="q-box" id="wrongBox">
+        <div class="q-title">
+            <div class="q-title-wrap" id="wrongQ"></div>
+            <button class="star-btn star-off" id="starWrongBtn" onclick="toggleFavorite(wrongList[wrongIndex])">☆</button>
+        </div>
+        <div id="wrongOpts"></div>
+        <div class="btns">
+            <button class="submit" onclick="checkWrong()">提交答案（备用）</button>
+            <button class="next" onclick="nextWrong()">下一题</button>
+        </div>
+        <div class="btns-row4">
+            <button class="delete-one" onclick="deleteFromList('wrong')">🗑 删除本题（从题库永久移除）</button>
+        </div>
+        <div class="tip" id="wrongTip"></div>
+        <div class="analysis" id="wrongAnalysis"></div>
+    </div>
+    <div class="empty" id="emptyTip">🎉 所有错题全部答对，通关！</div>
+</div>
+
+<!-- 收藏页面 -->
+<div id="favorite" class="page">
+    <div class="count">收藏题目：<span id="favIdx">0</span> / <span id="totalFav">0</span></div>
+    <div class="q-box" id="favBox">
+        <div class="q-title">
+            <div class="q-title-wrap" id="favQ"></div>
+            <button class="star-btn star-on" id="starFavBtn" onclick="toggleFavorite(favoriteList[favIndex])">★</button>
+        </div>
+        <div id="favOpts"></div>
+        <div class="btns">
+            <button class="submit" onclick="checkFav()">提交答案（备用）</button>
+            <button class="next" onclick="nextFav()">下一题</button>
+        </div>
+        <div class="btns-row4">
+            <button class="delete-one" onclick="deleteFromList('favorite')">🗑 删除本题（从题库永久移除）</button>
+        </div>
+        <div class="tip" id="favTip"></div>
+        <div class="analysis" id="favAnalysis"></div>
+    </div>
+    <div class="empty" id="favEmpty">暂无收藏题目，去全部题目页点击星星收藏</div>
+    <div class="reset-wrap">
+        <button class="clear-fav" onclick="clearAllFavorite()">一键清空全部收藏（不影响错题/完成记录）</button>
+    </div>
+</div>
+
+<!-- 最近新增 -->
+<div id="recent" class="page">
+    <div class="count">最近新增：<span id="recentIdx">0</span> / <span id="totalRecent">0</span></div>
+    <div class="q-box" id="recentBox">
+        <div class="q-title">
+            <div class="q-title-wrap" id="recentQ"></div>
+            <button class="star-btn star-off" id="starRecentBtn" onclick="toggleFavorite(recentList[recentIndex])">☆</button>
+        </div>
+        <div id="recentOpts"></div>
+        <div class="btns">
+            <button class="submit" onclick="checkRecent()">提交答案（备用）</button>
+            <button class="next" onclick="nextRecent()">下一题</button>
+        </div>
+        <div class="btns-row4">
+            <button class="delete-one" onclick="deleteFromList('recent')">🗑 删除本题（从题库永久移除）</button>
+        </div>
+        <div class="tip" id="recentTip"></div>
+        <div class="analysis" id="recentAnalysis"></div>
+    </div>
+    <div class="empty" id="recentEmpty">暂无最近新增题目（按题目入库时间倒序展示）</div>
+</div>
+
+<!-- 回收站 -->
+<div id="recycle" class="page">
+    <div class="count">回收站：<span id="recycleIdx">0</span> / <span id="totalRecycle">0</span></div>
+    <div class="q-box" id="recycleBox">
+        <div class="q-title">
+            <div class="q-title-wrap" id="recycleQ"></div>
+            <button class="star-btn star-off" id="starRecycleBtn" onclick="toggleFavorite(recycleList[recycleIndex])">☆</button>
+        </div>
+        <div class="meta-line" id="recycleMeta"></div>
+        <div id="recycleOpts"></div>
+        <div class="btns-row4">
+            <button class="restore-one" onclick="restoreCurrent()">♻️ 恢复本题到全部题目</button>
+        </div>
+        <div class="btns-row4">
+            <button class="delete-one" onclick="purgeCurrent()">❌ 彻底删除（无法恢复）</button>
+        </div>
+    </div>
+    <div class="empty" id="recycleEmpty">回收站是空的</div>
+    <div class="reset-wrap">
+        <button class="clear-fav" onclick="emptyRecycle()">🧹 一键清空回收站（彻底删除全部）</button>
+    </div>
+</div>
+
+<script>
+/* =========================================================
+   原始题库（继承自旧版本 73 道题）
+   每道题在首次加载时自动打上 addedAt = Date.now()，从而
+   支持「最近新增」按时间倒序展示。
+   ========================================================= */
+const SEED_QUESTIONS = [
+    {type:"单选",q:"接地装置是防雷装置的主要组成部分，作用是（），限制防雷装置的对地电压，使之不至过高",opts:["A 削弱雷电能量","B 泄放雷电流","C 切断雷电电流"],ans:1,expl:"【解析】雷电巨大电流必须通过接地装置导入大地，也就是泄放雷电流；无法削弱、切断。\n【速记口诀】防雷接地泄雷流，大地分担高压愁\n【试题心得】防雷题看到接地装置，核心功能永远选泄放电流"},
+    {type:"判断",q:"电力电缆的绑扎工作原则上敷设一排、绑扎一排。",opts:["正确","错误"],ans:1,expl:"【解析】规范要求电缆全部敷设完成后统一绑扎，不能敷一排绑一排。\n【速记口诀】电缆敷设全做完，统一绑扎不乱断\n【试题心得】题干出现“敷设一排绑扎一排”直接判定错误"},
+    {type:"判断",q:"电力电缆按照电缆的电压等级来选择的。",opts:["正确","错误"],ans:1,expl:"【解析】电缆选型不止看电压，还要核算载流量、截面等。\n【速记口诀】选电缆不只看电压，载流环境也要查\n【试题心得】单一条件选型一律错"},
+    {type:"判断",q:"电工作业人员应根据实际情况遵守有关安全法规,规程和制度。",opts:["正确","错误"],ans:1,expl:"【解析】安全规程强制遵守，不能变通。\n【速记口诀】电工规程强制守，不可随意变通走"},
+    {type:"判断",q:"电磁式仪表由可转动线圈、固定铁芯及转轴、游丝、指针、机械调零机构等组成。",opts:["正确","错误"],ans:1,expl:"【解析】可动线圈是磁电式，电磁是固定线圈、可动铁片。"},
+    {type:"判断",q:"低压照明用户供电电压允许偏差为额定电压的+10%~−10%。",opts:["正确","错误"],ans:1,expl:"【解析】照明标准+7%~-10%"},
+    {type:"判断",q:"避雷针一般安装在支柱(电杆)上或其他构架、建筑物上,必须经引下线与接地体可靠连接。",opts:["正确","错误"],ans:0,expl:"【解析】针、引线、接地三者缺一不可"},
+    {type:"判断",q:"避雷器可以用来防止雷电侵入高压电气设备，也可以用来保护小型独立的建筑物免遭雷击。",opts:["正确","错误"],ans:1,expl:"【解析】避雷器只防感应雷，不防建筑直击雷"},
+    {type:"判断",q:"避雷带是沿建筑物易受雷击的部位(如屋脊、屋檐、屋角等处)装设的带状导体。",opts:["正确","错误"],ans:0,expl:"【解析】避雷带标准定义"},
+    {type:"判断",q:"带绝缘柄的工具、绝缘手套、试电笔都属于低压基本安全用具",opts:["正确","错误"],ans:0,expl:"【解析】题库标准答案正确"},
+    {type:"判断",q:"绝缘鞋和绝缘靴都属于低压基本安全用具",opts:["正确","错误"],ans:1,expl:"【解析】属于辅助安全用具"},
+    {type:"判断",q:"手动导线压接钳也利用杠杆原理工作，多用于截面35mm2以上的导线接头的钳接管压接",opts:["正确","错误"],ans:1,expl:"【解析】35平方以上用液压钳"},
+    {type:"判断",q:"电度表是专门用来测量设备功率的装置。",opts:["正确","错误"],ans:1,expl:"【解析】电表测电能，不是功率"},
+    {type:"判断",q:"工频电流比高频电流更容易引起皮肤灼伤。",opts:["正确","错误"],ans:1,expl:"【解析】高频集肤效应灼伤更重"},
+    {type:"单选",q:"5kV绝缘鞋适用于电工穿用，在电压( )kV以下为辅助安全用具。",opts:["A 1","B 3","C 5","D 10"],ans:0,expl:"【解析】仅限1kV以下"},
+    {type:"判断",q:"组合开关可直接起动5kW以下的电动机。",opts:["正确","错误"],ans:0,expl:"【解析】规范允许"},
+    {type:"单选",q:"第( )类是间接接触电击防护措施。",opts:["A 一","B 二","C 三","D 四"],ans:1,expl:"【解析】二类双重绝缘间接防护"},
+    {type:"单选",q:"交流接触器的机械寿命是指在不带负载的操作次数，一般达( )。",opts:["A 10万次以下","B 600–1000万次","C 10000万次以上"],ans:1,expl:"【解析】机械寿命千万次"},
+    {type:"判断",q:"护套线弯曲，弯曲半径不小于护套线外径4倍",opts:["正确","错误"],ans:0,expl:"【解析】施工规范"},
+    {type:"判断",q:"电阻、电感、电容的并联电路中，当容抗与感抗相等时将发生电压谐振",opts:["正确","错误"],ans:1,expl:"【解析】并联电流谐振"},
+    {type:"判断",q:"并联电容器刚退出运行后，必须在1min以后才允许再次投入运行",opts:["正确","错误"],ans:1,expl:"【解析】需间隔3分钟"},
+    {type:"判断",q:"明装插座距地面不应低于1.8m，暗装插座距地面不应低于1.3m",opts:["正确","错误"],ans:1,expl:"【解析】普通暗装0.3m"},
+    {type:"判断",q:"雷电后造成架空线路产生高电压冲击波，这种雷电称为直击雷。",opts:["正确","错误"],ans:1,expl:"【解析】感应雷"},
+    {type:"判断",q:"在设备运行中，发生起火的原因是电流热量是间接原因，而火花或电弧则是直接原因。",opts:["正确","错误"],ans:1,expl:"【解析】二者都是直接火源"},
+    {type:"判断",q:"如负载电流过大，可采用电流互感器扩大电能表的量程",opts:["正确","错误"],ans:0,expl:"【解析】CT缩小电流扩量程"},
+    {type:"判断",q:"改革开放前我国强调以铝代铜作导线，以减轻导线的重量。",opts:["正确","错误"],ans:1,expl:"【解析】缺铜资源为主因"},
+    {type:"判断",q:"Ⅰ类电气设备，用于煤矿甲烷以外的爆炸性气体环境",opts:["正确","错误"],ans:1,expl:"【解析】一类仅煤矿瓦斯"},
+    {type:"判断",q:"室内电缆终端头，每1～3年停电检修一次",opts:["正确","错误"],ans:0,expl:"【解析】户内检修周期"},
+    {type:"判断",q:"三相电路中，相电压就是相与相之间的电压",opts:["正确","错误"],ans:1,expl:"【解析】相电压对零线，线电压两相之间"},
+    {type:"判断",q:"配电装置长度超过6m时，屏后应有两个通向本室或其他房间的出口，且其间距离不应超过15m",opts:["正确","错误"],ans:0,expl:"【解析】规范要求"},
+    {type:"判断",q:"保护绝缘的绝缘电阻不得低于5MΩ、加强绝缘的绝缘电阻也不得低于5MΩ",opts:["正确","错误"],ans:1,expl:"【解析】加强绝缘应为 7MΩ"},
+    {type:"单选",q:"携带式电气设备的绝缘电阻不应低于( )MΩ。",opts:["A 0.5","B 1","C 2","D 5"],ans:2,expl:"【解析】规范 ≥ 2MΩ"},
+    {type:"判断",q:"三相负载三角形连接时，线电流是指电源相线上的电流",opts:["正确","错误"],ans:0,expl:"【解析】线电流定义"},
+    {type:"判断",q:"如果电容器运行时，检查发现温度过高，应加强通风。",opts:["正确","错误"],ans:1,expl:"【解析】应停电检查，不能只通风"},
+    {type:"判断",q:"《中华人民共和国安全生产法》规定，负有安全生产监督管理职责的部门依法对存在隐患的生产经营单位作出停产停业、停止施工、停止使用相关设施或者设备的决定，生产经营单位应当依法执行，及时消除事故隐患",opts:["正确","错误"],ans:1,expl:"【解析】题库标答"},
+    {type:"判断",q:"住宅用户配电箱内单相照明线路的开关采用双极开关或单极开关",opts:["正确","错误"],ans:1,expl:"【解析】应采用双极开关"},
+    {type:"判断",q:"异步电动机的额定转差率一般不小于20%",opts:["正确","错误"],ans:1,expl:"【解析】一般为 2%~5%"},
+    {type:"判断",q:"正常情况下全站恢复送电时，应先合上并联电容器组开关，后合上各出线开关",opts:["正确","错误"],ans:1,expl:"【解析】应先合各出线开关"},
+    {type:"判断",q:"最大值、角频率和周期是表征正弦交流电的三个重要物理量,通常称为正弦交流电的三要素",opts:["正确","错误"],ans:1,expl:"【解析】三要素是最大值、角频率、初相位"},
+    {type:"单选",q:"异步电动机在空载直接起动和负载直接起动两种情况下，起动瞬间的电流( )。",opts:["A 同样大小","B 空载时的较小","C 负载时的较小","D 无法判断"],ans:0,expl:"【解析】起动电流由电机本身决定"},
+    {type:"判断",q:"气体击穿后绝缘性能很快得到恢复",opts:["正确","错误"],ans:0,expl:"【解析】气体绝缘可自恢复"},
+    {type:"判断",q:"熔断器具有良好的过载保护特性",opts:["正确","错误"],ans:1,expl:"【解析】熔断器主要用于短路保护"},
+    {type:"判断",q:"集中补偿，这种补偿方式是将电力电容器安装在变配电所内",opts:["正确","错误"],ans:0,expl:"【解析】集中补偿定义"},
+    {type:"判断",q:"改变转子电阻调速这种方法只适用于绕线式异步电动机。",opts:["正确","错误"],ans:0,expl:"【解析】绕线式专属调速方式"},
+    {type:"判断",q:"保护接零适用于电源中性点直接接地的三相四线配电网和三相五线配电网",opts:["正确","错误"],ans:0,expl:"【解析】保护接零适用范围"},
+    {type:"判断",q:"应用兆欧表测量并联电容器的绝缘电阻是测量并联电容器相间绝缘电阻",opts:["正确","错误"],ans:1,expl:"【解析】应测极对地"},
+    {type:"判断",q:"独立接闪杆的接地装置与接地网的地中距离不应小于2m",opts:["正确","错误"],ans:1,expl:"【解析】应不小于 3m"},
+    {type:"判断",q:"测量电路的电压时，应将电压表串联在被测负载或电源电压的两端",opts:["正确","错误"],ans:1,expl:"【解析】电压表应并联"},
+    {type:"判断",q:"用接地电阻测量仪测量接地电阻时，电压极（P1）距被测接地体不得小于40m，电流极（C1）距被测接地体不得小于20m",opts:["正确","错误"],ans:1,expl:"【解析】规范要求反之"},
+    {type:"单选",q:"携带式电气设备的绝缘电阻不应低于( )MΩ。",opts:["A 0.5","B 1","C 2","D 5"],ans:2,expl:"【解析】同前"},
+    {type:"单选",q:"异步电动机在空载直接起动和负载直接起动两种情况下，起动瞬间的电流( )。",opts:["A 同样大小","B 空载时的较小","C 负载时的较小","D 无法判断"],ans:0,expl:"【解析】同前"},
+    {type:"判断",q:"改变转子电阻调速这种方法只适用于绕线式异步电动机。",opts:["正确","错误"],ans:0,expl:"【解析】同前"},
+    {type:"判断",q:"集中补偿，这种补偿方式是将电力电容器安装在变配电所内",opts:["正确","错误"],ans:0,expl:"【解析】同前"},
+    {type:"判断",q:"安装普通RC系列插拔式熔断器的熔丝时，应将熔丝“盘圈”，盘圈方向应与螺钉（或螺母）紧固熔丝的方向相反",opts:["正确","错误"],ans:1,expl:"【解析】盘圈方向应与紧固方向一致"},
+    {type:"判断",q:"交流接触器的额定电流，是在额定的工作条件下所决定的电流值。",opts:["正确","错误"],ans:0,expl:"【解析】定义正确"},
+    {type:"判断",q:"三相四线制电路中，也可采用三相二元件有功功率表",opts:["正确","错误"],ans:1,expl:"【解析】应采用三元件"},
+    {type:"判断",q:"施工现场消防泵房的电源，必须引自变压器二次总闸或现场电源总闸的外侧，其电源线宜采用暗敷设",opts:["正确","错误"],ans:0,expl:"【解析】规范要求"},
+    {type:"判断",q:"为了避免误动作，保护装置的额定不动作电流不得低于额定动作电流的1/3",opts:["正确","错误"],ans:1,expl:"【解析】应为 1/2"},
+    {type:"判断",q:"断路器在选用时，要求断路器的额定通断能力要大于或等于被保护线路中可能出现的最大负载电流。",opts:["正确","错误"],ans:1,expl:"【解析】应大于最大短路电流"},
+    {type:"判断",q:"接闪杆可以用镀锌钢管焊成，其长度应在1m以上，钢管直径不得小于20mm，管壁厚度不得小于2.75mm。",opts:["正确","错误"],ans:1,expl:"【解析】管壁不得小于 2.5mm"},
+    {type:"判断",q:"同杆架设的回路数。380/220V线路时，不应超过5个回路",opts:["正确","错误"],ans:1,expl:"【解析】不应超过 4 个回路"},
+    {type:"判断",q:"耐张杆应能承受在断线情况下沿线路方向导线的拉力",opts:["正确","错误"],ans:0,expl:"【解析】耐张杆定义"},
+    {type:"判断",q:"槽板规格应与导线规格和根数相适应，一般规定导线（含绝缘层）的总截面积不大于槽板内径1/4",opts:["正确","错误"],ans:1,expl:"【解析】应为不大于 1/3"},
+    {type:"单选",q:"螺口灯座的螺口应与( )连接。",opts:["A 中性线","B 保护零线","C 相线","D 保护地线"],ans:0,expl:"【解析】螺口接零线"},
+    {type:"判断",q:"安全电压的插座应该带有接零或接地插头或插孔",opts:["正确","错误"],ans:1,expl:"【解析】安全电压不应带接零/接地"},
+    {type:"判断",q:"接入电流互感器二次回路的电流表，其线圈的额定电流均为5A",opts:["正确","错误"],ans:0,expl:"【解析】标准二次电流 5A"},
+    {type:"判断",q:"隔离开关是指承担接通和断开电流任务，将电路与电源隔开。",opts:["正确","错误"],ans:1,expl:"【解析】不承担带负荷分合"},
+    {type:"判断",q:"在磁路中，当磁阻大小不变时，磁通与磁动势成反比。",opts:["正确","错误"],ans:1,expl:"【解析】磁通与磁动势成正比"},
+    {type:"判断",q:"若磁场中各点的磁感应强度大小相同，则该磁场为均匀磁场。",opts:["正确","错误"],ans:1,expl:"【解析】还要求方向相同"},
+    {type:"单选",q:"在380V低压IT系统中，一般要求保护接地电阻≤( )Ω。",opts:["A 4","B 10","C 20","D 30"],ans:0,expl:"【解析】一般要求 ≤ 4Ω"},
+    {type:"单选",q:"直流电路有功功率的表达式是( )。",opts:["A P=U²R","B P=I²R","C P=I²/R","D P=IUR"],ans:1,expl:"【解析】P=I²R 为直流常用式"}
+];
+
+/* =========================================================
+   全局状态
+   ========================================================= */
+let questions = [];            // 当前题库（剔除回收站后）
+let recycleList = [];          // 回收站里的题（题对象，含 deletedAt）
+let allVisibleList = [];       // 「全部题目」页的有效 id 列表（即 questions 的下标）
+let wrongList = [];
+let favoriteList = [];
+let recentList = [];           // 最近新增（按 addedAt 倒序的题 id 列表）
+let finished = [];
+let allIndex = 0, wrongIndex = 0, favIndex = 0, recentIndex = 0, recycleIndex = 0;
+let selectAll = null, selectWrong = null, selectFav = null, selectRecent = null;
+let touchStartX = 0;
+const SWIPE_THRESHOLD = 50;
+
+const STORAGE_KEY = "electric_wrong_questions";
+const FINISH_KEY  = "electric_finished_questions";
+const FAV_KEY     = "electric_favorite_questions";
+const REC_KEY     = "electric_recycle_questions";      // 新增：[{...question, deletedAt}]
+const QB_KEY      = "electric_question_bank";          // 新增：题库持久化（含 addedAt）
+const SEED_FLAG   = "electric_seed_v1_done";            // 新增：种子题库写入标记
+
+/* =========================================================
+   持久化
+   ========================================================= */
+function loadStorage(){
+    // 1) 题库
+    const qb = localStorage.getItem(QB_KEY);
+    if(qb){
+        try{ questions = JSON.parse(qb); }catch(e){ questions = []; }
+    }
+    if(!questions || questions.length===0){
+        // 首次：把种子题库写入并打 addedAt
+        const now = Date.now();
+        questions = SEED_QUESTIONS.map((q,i)=>({ ...q, addedAt: now - (SEED_QUESTIONS.length - i) * 1000 }));
+        localStorage.setItem(QB_KEY, JSON.stringify(questions));
+        localStorage.setItem(SEED_FLAG, "1");
+    }else{
+        // 兼容：老题库若没 addedAt，依次补上（用 now - 顺序*1000，模拟"老题更早"）
+        let patched = false;
+        const now = Date.now();
+        questions.forEach((q,i)=>{
+            if(typeof q.addedAt !== "number"){ q.addedAt = now - (questions.length - i) * 60000; patched = true; }
+        });
+        if(patched) localStorage.setItem(QB_KEY, JSON.stringify(questions));
+    }
+
+    // 2) 错题
+    wrongList = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    // 3) 完成
+    finished  = JSON.parse(localStorage.getItem(FINISH_KEY)  || "[]");
+    // 4) 收藏
+    favoriteList = JSON.parse(localStorage.getItem(FAV_KEY) || "[]");
+    // 5) 回收站
+    recycleList  = JSON.parse(localStorage.getItem(REC_KEY) || "[]");
+
+    // 6) 清理越界 id
+    const validLen = questions.length;
+    wrongList     = wrongList.filter(i=>i>=0 && i<validLen);
+    finished      = finished.filter(i=>i>=0 && i<validLen);
+    favoriteList  = favoriteList.filter(i=>i>=0 && i<validLen);
+
+    rebuildRecent();
+    rebuildAllVisible();
+    updateAllUI();
+}
+
+function saveStorage(){localStorage.setItem(STORAGE_KEY,JSON.stringify(wrongList));updateWrongUI();}
+function saveFinish(){localStorage.setItem(FINISH_KEY,JSON.stringify(finished));updateFinishUI();}
+function saveFav(){localStorage.setItem(FAV_KEY,JSON.stringify(favoriteList));updateFavUI();}
+function saveRecycle(){localStorage.setItem(REC_KEY,JSON.stringify(recycleList));updateRecycleUI();}
+function saveBank(){localStorage.setItem(QB_KEY,JSON.stringify(questions));}
+
+function rebuildAllVisible(){
+    allVisibleList = questions.map((_,i)=>i);
+    if(allIndex >= allVisibleList.length) allIndex = 0;
+}
+function rebuildRecent(){
+    // 按 addedAt 倒序的题 id
+    const order = questions.map((q,i)=>({i, t:q.addedAt||0}))
+                           .sort((a,b)=>b.t-a.t)
+                           .map(o=>o.i);
+    recentList = order;
+    if(recentIndex >= recentList.length) recentIndex = 0;
+}
+
+/* =========================================================
+   收藏
+   ========================================================= */
+function toggleFavorite(qId){
+    if(qId === undefined || qId === null) return;
+    const idx = favoriteList.indexOf(qId);
+    if(idx > -1){favoriteList.splice(idx,1);}
+    else{favoriteList.push(qId);}
+    saveFav();
+    const activeId = document.querySelector('.page.show')?.id;
+    if(activeId==='all') renderAll();
+    if(activeId==='wrong') renderWrong();
+    if(activeId==='favorite') renderFavorite();
+    if(activeId==='recent') renderRecent();
+    if(activeId==='recycle') renderRecycle();
+}
+function clearAllFavorite(){
+    if(favoriteList.length===0){alert("暂无收藏");return;}
+    if(!confirm(`清空 ${favoriteList.length} 道收藏？错题与完成记录不受影响`)) return;
+    favoriteList=[];saveFav();renderFavorite();
+}
+
+/* =========================================================
+   删除 / 恢复 / 彻底删除
+   ========================================================= */
+function moveToRecycle(qId, fromListName, fromArr){
+    if(qId===undefined||qId===null) return;
+    const q = questions[qId];
+    if(!q) return;
+    // 推入回收站
+    recycleList.push({...q, _origId:qId, deletedAt: Date.now()});
+    saveRecycle();
+    // 从错题/收藏/完成 中清除该 id
+    wrongList = wrongList.filter(i=>i!==qId); saveStorage();
+    favoriteList = favoriteList.filter(i=>i!==qId); saveFav();
+    finished = finished.filter(i=>i!==qId); saveFinish();
+    // 从题库中真删
+    questions.splice(qId,1);
+    saveBank();
+    // 所有引用此 id 的列表都要修正：>=qId 的 id 减 1
+    [wrongList, favoriteList, finished].forEach(arr=>{
+        for(let i=0;i<arr.length;i++){ if(arr[i] > qId) arr[i] -= 1; }
+    });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(wrongList));
+    localStorage.setItem(FAV_KEY,     JSON.stringify(favoriteList));
+    localStorage.setItem(FINISH_KEY,  JSON.stringify(finished));
+    // 重建索引
+    rebuildAllVisible();
+    rebuildRecent();
+    updateAllUI();
+    // 刷新当前页
+    if(fromListName==='all') renderAll();
+    if(fromListName==='wrong') renderWrong();
+    if(fromListName==='favorite') renderFavorite();
+    if(fromListName==='recent') renderRecent();
+}
+
+function deleteCurrentQuestion(){
+    const id = allVisibleList[allIndex];
+    if(id===undefined) return;
+    if(!confirm("确定要删除本题吗？删除后会进入回收站，可在那里恢复。")) return;
+    moveToRecycle(id, 'all');
+}
+function deleteFromList(from){
+    let id;
+    if(from==='wrong'){ id = wrongList[wrongIndex]; }
+    else if(from==='favorite'){ id = favoriteList[favIndex]; }
+    else if(from==='recent'){ id = recentList[recentIndex]; }
+    if(id===undefined) return;
+    if(!confirm("确定要删除本题吗？删除后会进入回收站，可在那里恢复。")) return;
+    moveToRecycle(id, from);
+}
+function restoreCurrent(){
+    const item = recycleList[recycleIndex];
+    if(!item) return;
+    // 重新入题库（放最前面当作"新增"）
+    const restored = {...item};
+    delete restored._origId; delete restored.deletedAt;
+    restored.addedAt = Date.now();
+    questions.unshift(restored);
+    saveBank();
+    // 同步修正其他列表：所有 id +1（因为前面插了一条）
+    [wrongList, favoriteList, finished].forEach(arr=>{ for(let i=0;i<arr.length;i++) arr[i]+=1; });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(wrongList));
+    localStorage.setItem(FAV_KEY,     JSON.stringify(favoriteList));
+    localStorage.setItem(FINISH_KEY,  JSON.stringify(finished));
+    // 从回收站移除
+    recycleList.splice(recycleIndex,1);
+    saveRecycle();
+    rebuildAllVisible();
+    rebuildRecent();
+    updateAllUI();
+    renderRecycle();
+    alert("已恢复到全部题目，并在「最近新增」置顶。");
+}
+function purgeCurrent(){
+    if(!confirm("彻底删除本题？此操作不可恢复！")) return;
+    recycleList.splice(recycleIndex,1);
+    saveRecycle();
+    renderRecycle();
+}
+function emptyRecycle(){
+    if(recycleList.length===0){alert("回收站已为空");return;}
+    if(!confirm(`确定彻底清空回收站 ${recycleList.length} 道题？此操作不可恢复！`)) return;
+    recycleList = [];
+    saveRecycle();
+    renderRecycle();
+}
+
+/* =========================================================
+   UI 计数刷新
+   ========================================================= */
+function updateAllUI(){
+    updateWrongUI(); updateFinishUI(); updateFavUI(); updateRecycleUI(); updateRecentUI();
+}
+function updateFinishUI(){
+    document.getElementById('finishCount').innerText = finished.length;
+    document.getElementById('allTotalShow').innerText = questions.length;
+    document.getElementById('allTotalShow2').innerText = questions.length;
+    document.getElementById('allNum').innerText = questions.length;
+}
+function updateWrongUI(){
+    document.getElementById('wrongNum').innerText = wrongList.length;
+    document.getElementById('totalWrong').innerText = wrongList.length;
+    const box = document.getElementById('wrongBox');
+    const empty = document.getElementById('emptyTip');
+    if(wrongList.length===0){box.style.display='none';empty.style.display='block';}
+    else{box.style.display='block';empty.style.display='none';}
+}
+function updateFavUI(){
+    document.getElementById('favNum').innerText = favoriteList.length;
+    document.getElementById('totalFav').innerText = favoriteList.length;
+    const box = document.getElementById('favBox');
+    const empty = document.getElementById('favEmpty');
+    if(favoriteList.length===0){box.style.display='none';empty.style.display='block';}
+    else{box.style.display='block';empty.style.display='none';}
+}
+function updateRecycleUI(){
+    document.getElementById('recycleNum').innerText = recycleList.length;
+    document.getElementById('totalRecycle').innerText = recycleList.length;
+    const box = document.getElementById('recycleBox');
+    const empty = document.getElementById('recycleEmpty');
+    if(recycleList.length===0){box.style.display='none';empty.style.display='block';}
+    else{box.style.display='block';empty.style.display='none';}
+}
+function updateRecentUI(){
+    document.getElementById('recentNum').innerText = recentList.length;
+    document.getElementById('totalRecent').innerText = recentList.length;
+    const box = document.getElementById('recentBox');
+    const empty = document.getElementById('recentEmpty');
+    if(recentList.length===0){box.style.display='none';empty.style.display='block';}
+    else{box.style.display='block';empty.style.display='none';}
+}
+
+function clearStorage(){
+    if(!confirm("确认重置错题与完成记录？收藏、回收站、最近新增 不会清除。")) return;
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(FINISH_KEY);
+    wrongList=[];finished=[];
+    saveStorage();saveFinish();
+    alert("已重置错题和完成记录");
+    renderAll();
+}
+function redoCurrentQuestion(){
+    const id = allVisibleList[allIndex];
+    if(id===undefined) return;
+    if(finished.includes(id)){
+        finished = finished.filter(i=>i!==id);
+        saveFinish();alert("已取消本题完成标记");renderAll();
+    }else alert("本题未完成");
+}
+function redoAllFinish(){
+    if(finished.length===0){alert("无已完成题目");return;}
+    if(!confirm("确认重置所有完成标记？")) return;
+    finished=[];saveFinish();alert("全部恢复未做");renderAll();
+}
+
+/* =========================================================
+   Tab 切换
+   ========================================================= */
+function switchTab(id){
+    document.querySelectorAll('.page').forEach(p=>p.classList.remove('show'));
+    document.getElementById(id).classList.add('show');
+    document.querySelectorAll('.tab button').forEach(b=>b.classList.remove('active'));
+    // 通过 data 找按钮更稳：这里用文本模糊匹配
+    document.querySelectorAll('.tab button').forEach(b=>{
+        if(b.innerText.includes(id==='all'?'全部题目':id==='wrong'?'待重做错题':id==='favorite'?'收藏题目':id==='recent'?'最近新增':'回收站')){
+            b.classList.add('active');
+        }
+    });
+    if(id==='all') renderAll();
+    if(id==='wrong') renderWrong();
+    if(id==='favorite') renderFavorite();
+    if(id==='recent') renderRecent();
+    if(id==='recycle') renderRecycle();
+}
+
+/* =========================================================
+   全部题目
+   ========================================================= */
+function jumpFirstUnfinished(){
+    let target=null;
+    for(let i=0;i<allVisibleList.length;i++){
+        if(!finished.includes(allVisibleList[i])){ target=i; break; }
+    }
+    if(target===null){alert("全部做完啦！");return;}
+    allIndex=target; renderAll();
+}
+function getNextUnfinished(){
+    const total = allVisibleList.length;
+    if(total===0) return 0;
+    let next = (allIndex+1)%total;
+    let steps=0;
+    while(steps<total){
+        if(!finished.includes(allVisibleList[next])) return next;
+        next=(next+1)%total; steps++;
+    }
+    return (allIndex+1)%total;
+}
+function renderAll(){
+    if(allVisibleList.length===0){
+        document.getElementById('allQ').innerText = "题库为空";
+        document.getElementById('allOpts').innerHTML = "";
+        document.getElementById('allIdx').innerText = 0;
+        return;
+    }
+    if(allIndex >= allVisibleList.length) allIndex=0;
+    const id = allVisibleList[allIndex];
+    const item = questions[id];
+    const box = document.getElementById('allQBox');
+    const done = finished.includes(id);
+    const fav = favoriteList.includes(id);
+    if(done) box.classList.add('q-done-wrap'); else box.classList.remove('q-done-wrap');
+    const star = document.getElementById('starAllBtn');
+    if(fav){star.className="star-btn star-on";star.innerText="★";}
+    else{star.className="star-btn star-off";star.innerText="☆";}
+    document.getElementById('allIdx').innerText = allIndex+1;
+    document.getElementById('allQ').innerHTML = `【${item.type}】${item.q} ${done?'<span class="q-title-done-tag">✅ 已完成</span>':''}`;
+    let optHtml = '';
+    item.opts.forEach((opt,i)=>{
+        optHtml += `<div class="opt" id="a${i}" onclick="clickCheckAll(${i})">${opt}${done?'<span class="opt-done-mark">✅已做完</span>':''}</div>`;
+    });
+    document.getElementById('allOpts').innerHTML = optHtml;
+    document.getElementById('allTip').className = 'tip';
+    document.getElementById('allAnalysis').style.display = 'none';
+    selectAll = null;
+}
+function clickCheckAll(i){
+    selectAll = i;
+    document.querySelectorAll('#allOpts .opt').forEach(el=>el.classList.remove('selected'));
+    document.getElementById(`a${i}`).classList.add('selected');
+    const id = allVisibleList[allIndex];
+    const item = questions[id];
+    const tip = document.getElementById('allTip');
+    const ana = document.getElementById('allAnalysis');
+    ana.style.display = 'block';
+    ana.innerHTML = `<h4>完整解析</h4><p>${(item.explain||'').replaceAll("\n","<br>")}</p>`;
+    if(i === item.ans){
+        tip.className = 'tip right';
+        tip.innerText = "回答正确！自动跳转下一题";
+        if(!finished.includes(id)){finished.push(id);saveFinish();}
+        setTimeout(()=>{allIndex=getNextUnfinished();renderAll();},1200);
+    }else{
+        tip.className = 'tip wrong';
+        tip.innerText = `答错，正确答案：${item.opts[item.ans]}`;
+        if(!wrongList.includes(id)){wrongList.push(id);saveStorage();}
+    }
+}
+function checkAll(){if(selectAll===null)alert("先选答案");else clickCheckAll(selectAll);}
+function nextAll(){allIndex=getNextUnfinished();renderAll();}
+function prevAll(){allIndex=(allIndex-1+allVisibleList.length)%allVisibleList.length;renderAll();}
+
+/* =========================================================
+   错题
+   ========================================================= */
+function renderWrong(){
+    if(wrongList.length===0) return;
+    if(wrongIndex >= wrongList.length) wrongIndex=0;
+    const qid = wrongList[wrongIndex];
+    const item = questions[qid];
+    if(!item) return;
+    const fav = favoriteList.includes(qid);
+    const star = document.getElementById('starWrongBtn');
+    if(fav){star.className="star-btn star-on";star.innerText="★";}
+    else{star.className="star-btn star-off";star.innerText="☆";}
+    document.getElementById('wrongIdx').innerText = wrongIndex+1;
+    document.getElementById('wrongQ').innerText = `【${item.type}】${item.q}`;
+    let optHtml = '';
+    item.opts.forEach((opt,i)=>optHtml += `<div class="opt" id="w${i}" onclick="clickCheckWrong(${i})">${opt}</div>`);
+    document.getElementById('wrongOpts').innerHTML = optHtml;
+    document.getElementById('wrongTip').className = 'tip';
+    document.getElementById('wrongAnalysis').style.display = 'none';
+    selectWrong = null;
+}
+function clickCheckWrong(i){
+    selectWrong = i;
+    document.querySelectorAll('#wrongOpts .opt').forEach(el=>el.classList.remove('selected'));
+    document.getElementById(`w${i}`).classList.add('selected');
+    const qid = wrongList[wrongIndex];
+    const item = questions[qid];
+    const tip = document.getElementById('wrongTip');
+    const ana = document.getElementById('wrongAnalysis');
+    ana.style.display = 'block';
+    ana.innerHTML = `<h4>完整解析</h4><p>${(item.explain||'').replaceAll("\n","<br>")}</p>`;
+    if(i === item.ans){
+        tip.className = 'tip right';
+        tip.innerText = "答对，移出错题本";
+        wrongList.splice(wrongIndex,1); saveStorage();
+        if(!finished.includes(qid)){finished.push(qid);saveFinish();}
+        wrongIndex=0; renderWrong();
+    }else{
+        tip.className = 'tip wrong';
+        tip.innerText = `错误，正确：${item.opts[item.ans]}`;
+    }
+}
+function checkWrong(){if(selectWrong===null)alert("选择答案");else clickCheckWrong(selectWrong);}
+function nextWrong(){if(wrongList.length===0)return;wrongIndex=(wrongIndex+1)%wrongList.length;renderWrong();}
+function prevWrong(){if(wrongList.length===0)return;wrongIndex=(wrongIndex-1+wrongList.length)%wrongList.length;renderWrong();}
+
+/* =========================================================
+   收藏
+   ========================================================= */
+function renderFavorite(){
+    if(favoriteList.length===0) return;
+    if(favIndex >= favoriteList.length) favIndex=0;
+    const qid = favoriteList[favIndex];
+    const item = questions[qid];
+    if(!item) return;
+    const star = document.getElementById('starFavBtn');
+    star.className="star-btn star-on"; star.innerText="★";
+    document.getElementById('favIdx').innerText = favIndex+1;
+    document.getElementById('favQ').innerText = `【${item.type}】${item.q}`;
+    let optHtml = '';
+    item.opts.forEach((opt,i)=>optHtml += `<div class="opt" id="f${i}" onclick="clickCheckFav(${i})">${opt}</div>`);
+    document.getElementById('favOpts').innerHTML = optHtml;
+    document.getElementById('favTip').className = 'tip';
+    document.getElementById('favAnalysis').style.display = 'none';
+    selectFav = null;
+}
+function clickCheckFav(i){
+    selectFav = i;
+    document.querySelectorAll('#favOpts .opt').forEach(el=>el.classList.remove('selected'));
+    document.getElementById(`f${i}`).classList.add('selected');
+    const qid = favoriteList[favIndex];
+    const item = questions[qid];
+    const tip = document.getElementById('favTip');
+    const ana = document.getElementById('favAnalysis');
+    ana.style.display = 'block';
+    ana.innerHTML = `<h4>完整解析</h4><p>${(item.explain||'').replaceAll("\n","<br>")}</p>`;
+    if(i === item.ans){
+        tip.className = 'tip right';
+        tip.innerText = "回答正确";
+        if(!finished.includes(qid)){finished.push(qid);saveFinish();}
+        setTimeout(()=>nextFav(),1200);
+    }else{
+        tip.className = 'tip wrong';
+        tip.innerText = `答错，正确：${item.opts[item.ans]}`;
+        if(!wrongList.includes(qid)){wrongList.push(qid);saveStorage();}
+    }
+}
+function checkFav(){if(selectFav===null)alert("先选择答案");else clickCheckFav(selectFav);}
+function nextFav(){if(favoriteList.length===0)return;favIndex=(favIndex+1)%favoriteList.length;renderFavorite();}
+function prevFav(){if(favoriteList.length===0)return;favIndex=(favIndex-1+favoriteList.length)%favoriteList.length;renderFavorite();}
+
+/* =========================================================
+   最近新增
+   ========================================================= */
+function renderRecent(){
+    if(recentList.length===0) return;
+    if(recentIndex >= recentList.length) recentIndex=0;
+    const qid = recentList[recentIndex];
+    const item = questions[qid];
+    if(!item) return;
+    const fav = favoriteList.includes(qid);
+    const star = document.getElementById('starRecentBtn');
+    if(fav){star.className="star-btn star-on";star.innerText="★";}
+    else{star.className="star-btn star-off";star.innerText="☆";}
+    document.getElementById('recentIdx').innerText = recentIndex+1;
+    document.getElementById('recentQ').innerText = `【${item.type}】${item.q}`;
+    let optHtml = '';
+    item.opts.forEach((opt,i)=>optHtml += `<div class="opt" id="r${i}" onclick="clickCheckRecent(${i})">${opt}</div>`);
+    document.getElementById('recentOpts').innerHTML = optHtml;
+    document.getElementById('recentTip').className = 'tip';
+    document.getElementById('recentAnalysis').style.display = 'none';
+    selectRecent = null;
+}
+function clickCheckRecent(i){
+    selectRecent = i;
+    document.querySelectorAll('#recentOpts .opt').forEach(el=>el.classList.remove('selected'));
+    document.getElementById(`r${i}`).classList.add('selected');
+    const qid = recentList[recentIndex];
+    const item = questions[qid];
+    const tip = document.getElementById('recentTip');
+    const ana = document.getElementById('recentAnalysis');
+    ana.style.display = 'block';
+    ana.innerHTML = `<h4>完整解析</h4><p>${(item.explain||'').replaceAll("\n","<br>")}</p>`;
+    if(i === item.ans){
+        tip.className = 'tip right';
+        tip.innerText = "回答正确";
+        if(!finished.includes(qid)){finished.push(qid);saveFinish();}
+        setTimeout(()=>nextRecent(),1200);
+    }else{
+        tip.className = 'tip wrong';
+        tip.innerText = `答错，正确：${item.opts[item.ans]}`;
+        if(!wrongList.includes(qid)){wrongList.push(qid);saveStorage();}
+    }
+}
+function checkRecent(){if(selectRecent===null)alert("先选答案");else clickCheckRecent(selectRecent);}
+function nextRecent(){if(recentList.length===0)return;recentIndex=(recentIndex+1)%recentList.length;renderRecent();}
+function prevRecent(){if(recentList.length===0)return;recentIndex=(recentIndex-1+recentList.length)%recentList.length;renderRecent();}
+
+/* =========================================================
+   回收站
+   ========================================================= */
+function renderRecycle(){
+    if(recycleList.length===0) return;
+    if(recycleIndex >= recycleList.length) recycleIndex=0;
+    const item = recycleList[recycleIndex];
+    if(!item) return;
+    const fav = favoriteList.includes(item._origId);
+    const star = document.getElementById('starRecycleBtn');
+    if(fav){star.className="star-btn star-on";star.innerText="★";}
+    else{star.className="star-btn star-off";star.innerText="☆";}
+    document.getElementById('recycleIdx').innerText = recycleIndex+1;
+    document.getElementById('recycleQ').innerText = `【${item.type}】${item.q}`;
+    const d = new Date(item.deletedAt);
+    const pad = n=>n<10?'0'+n:n;
+    document.getElementById('recycleMeta').innerText = `删除于 ${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    let optHtml = '';
+    item.opts.forEach((opt,i)=>optHtml += `<div class="opt">${opt}</div>`);
+    document.getElementById('recycleOpts').innerHTML = optHtml;
+    // 收藏按钮在回收站其实无效（id 已失效），但仍展示状态
+}
+
+/* =========================================================
+   滑动切换
+   ========================================================= */
+function bindSwipe(elId, onNext, onPrev){
+    const el = document.getElementById(elId);
+    if(!el) return;
+    el.addEventListener('touchstart', e=> touchStartX = e.touches[0].clientX);
+    el.addEventListener('touchend', e=>{
+        const endX = e.changedTouches[0].clientX;
+        const diff = endX - touchStartX;
+        if(diff < -SWIPE_THRESHOLD) onNext && onNext();
+        else if(diff > SWIPE_THRESHOLD) onPrev && onPrev();
+    });
+}
+bindSwipe('all', nextAll, prevAll);
+bindSwipe('wrong', nextWrong, prevWrong);
+bindSwipe('favorite', nextFav, prevFav);
+bindSwipe('recent', nextRecent, prevRecent);
+
+/* =========================================================
+   启动
+   ========================================================= */
+window.onload = function(){
+    loadStorage();
+    renderAll();
+};
+</script>
+</body>
+</html>
