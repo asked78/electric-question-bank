@@ -28,7 +28,22 @@ vercel deploy --prod --yes
 | 百度 OCR AK | `bEqAXMhhLT4NB7YGesStYncL` | ✅ 已配置在 Vercel 环境变量 |
 | 百度 OCR SK | `8l8J6J7L77RhW31m85Rw7cRYeWKJ4QLf` | ✅ 已配置在 Vercel 环境变量 |
 
+## 🆔 题目 ID 系统（重要！2026-07-20 升级）
+
+每道题都有**稳定字符串 ID**（基于题干生成），格式：`q_<题干前40字符去标点>`
+
+**核心规则**：
+- 助手加题/删题/调整顺序 → 题目 ID 不变
+- 用户做题记录（错题/收藏/完成）通过 ID 引用，**永不错位**
+- 旧版本（数字下标 ID）会自动迁移到新版本（字符串 ID），迁移标记 `electric_seed_v2_done`
+
+**关键函数**：
+- `genQId(q.q)` - 生成稳定 ID
+- `loadStorage()` - 含 v1→v2 迁移逻辑
+- `qMap = new Map(questions.map(q => [q.id, q]))` - ID 查询映射
+
 ## 📁 文件结构
+
 
 ```
 /workspace/project/
