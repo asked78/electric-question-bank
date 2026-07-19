@@ -1062,8 +1062,10 @@ function clickCheckAll(i){
         setTimeout(()=>{allIndex=getNextUnfinished();renderAll();},1200);
     }else{
         tip.className = 'tip wrong';
-        tip.innerText = `答错，正确答案：${item.opts[item.ans]}`;
+        tip.innerText = `答错，正确答案：${item.opts[item.ans]}，2秒后跳转下一题`;
         if(!wrongList.includes(id)){wrongList.push(id);saveStorage();}
+        // ★ 答错也自动跳转下一题（2 秒，让用户有时间看正确答案）
+        setTimeout(()=>{allIndex=getNextUnfinished();renderAll();},2000);
     }
 }
 function checkAll(){if(selectAll===null)alert("先选答案");else clickCheckAll(selectAll);}
@@ -1111,7 +1113,8 @@ function clickCheckWrong(i){
         wrongIndex=0; renderWrong();
     }else{
         tip.className = 'tip wrong';
-        tip.innerText = `错误，正确：${item.opts[item.ans]}`;
+        tip.innerText = `错误，正确：${item.opts[item.ans]}，2秒后跳转下一题`;
+        setTimeout(()=>nextWrong(),2000);
     }
 }
 function checkWrong(){if(selectWrong===null)alert("选择答案");else clickCheckWrong(selectWrong);}
@@ -1156,8 +1159,9 @@ function clickCheckFav(i){
         setTimeout(()=>nextFav(),1200);
     }else{
         tip.className = 'tip wrong';
-        tip.innerText = `答错，正确：${item.opts[item.ans]}`;
+        tip.innerText = `答错，正确：${item.opts[item.ans]}，2秒后跳转下一题`;
         if(!wrongList.includes(qid)){wrongList.push(qid);saveStorage();}
+        setTimeout(()=>nextFav(),2000);
     }
 }
 function checkFav(){if(selectFav===null)alert("先选择答案");else clickCheckFav(selectFav);}
@@ -1204,8 +1208,9 @@ function clickCheckRecent(i){
         setTimeout(()=>nextRecent(),1200);
     }else{
         tip.className = 'tip wrong';
-        tip.innerText = `答错，正确：${item.opts[item.ans]}`;
+        tip.innerText = `答错，正确：${item.opts[item.ans]}，2秒后跳转下一题`;
         if(!wrongList.includes(qid)){wrongList.push(qid);saveStorage();}
+        setTimeout(()=>nextRecent(),2000);
     }
 }
 function checkRecent(){if(selectRecent===null)alert("先选答案");else clickCheckRecent(selectRecent);}
