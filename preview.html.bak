@@ -211,7 +211,7 @@
     <div class="q-box" id="recycleBox">
         <div class="q-title">
             <div class="q-title-wrap" id="recycleQ"></div>
-            <button class="star-btn star-off" id="starRecycleBtn" onclick="toggleFavorite(recycleList[recycleIndex]?.id)">☆</button>
+            <button class="star-btn star-off" id="starRecycleBtn" onclick="toggleFavorite(recycleList[recycleIndex])">☆</button>
         </div>
         <div class="meta-line" id="recycleMeta"></div>
         <div id="recycleOpts"></div>
@@ -229,17 +229,6 @@
 </div>
 
 <script>
-/* =========================================================
-   稳定 ID 生成（基于题干，去除空格和标点）
-   新版本部署后，即使 SEED_QUESTIONS 增删，做题记录仍然对应到同一道题
-   ========================================================= */
-function genQId(q) {
-    if(!q) return 'q_' + Math.random().toString(36).slice(2, 12);
-    // 去除空格和标点，保留中文/字母/数字（用 Unicode 属性转义）
-    const hash = String(q).replace(/[\s\p{P}\p{S}]/gu, '').slice(0, 40);
-    return 'q_' + hash;
-}
-
 /* =========================================================
    原始题库（继承自旧版本 73 道题）
    每道题在首次加载时自动打上 addedAt = Date.now()，从而
@@ -316,7 +305,9 @@ const SEED_QUESTIONS = [
     {type:"判断",q:"在磁路中，当磁阻大小不变时，磁通与磁动势成反比。",opts:["正确","错误"],ans:1,expl:"【解析】磁通与磁动势成正比"},
     {type:"判断",q:"若磁场中各点的磁感应强度大小相同，则该磁场为均匀磁场。",opts:["正确","错误"],ans:1,expl:"【解析】还要求方向相同"},
     {type:"单选",q:"在380V低压IT系统中，一般要求保护接地电阻≤( )Ω。",opts:["A 4","B 10","C 20","D 30"],ans:0,expl:"【解析】一般要求 ≤ 4Ω"},
-    {type:"单选",q:"直流电路有功功率的表达式是( )。",opts:["A P=U²R","B P=I²R","C P=I²/R","D P=IUR"],ans:1,expl:"【解析】P=I²R 为直流常用式"}
+    {type:"单选",q:"直流电路有功功率的表达式是( )。",opts:["A P=U²R","B P=I²R","C P=I²/R","D P=IUR"],ans:1,expl:"【解析】P=I²R 为直流常用式"},
+    /* 用户通过 OCR 上传的题目 */
+    {type:"单选",q:"对于三相异步电动机，熔体额定电流应选为电动机额定电流的()倍。",opts:["A 1.5~2.5","B 2.5~3.5","C 3.5~4.5","D 5~7"],ans:0,expl:"【解析】三相异步电动机熔体额定电流一般为额定电流的 1.5~2.5 倍，兼顾启动电流和保护灵敏度。\n【速记口诀】熔体倍数记 1.5，启动保护两不误\n【试题心得】熔断器选型题，三相异步电动机选 1.5~2.5 倍"}
 ];
 
 /* =========================================================
@@ -324,12 +315,11 @@ const SEED_QUESTIONS = [
    ========================================================= */
 let questions = [];            // 当前题库（剔除回收站后）
 let recycleList = [];          // 回收站里的题（题对象，含 deletedAt）
-let allVisibleList = [];       // 「全部题目」页的有效 id 列表（字符串 id）
-let wrongList = [];            // 字符串 id 列表
-let favoriteList = [];         // 字符串 id 列表
-let recentList = [];           // 最近新增（按 addedAt 倒序的字符串 id 列表）
-let finished = [];             // 字符串 id 列表
-let qMap = new Map();          // id → 题对象 的快速索引
+let allVisibleList = [];       // 「全部题目」页的有效 id 列表（即 questions 的下标）
+let wrongList = [];
+let favoriteList = [];
+let recentList = [];           // 最近新增（按 addedAt 倒序的题 id 列表）
+let finished = [];
 let allIndex = 0, wrongIndex = 0, favIndex = 0, recentIndex = 0, recycleIndex = 0;
 let selectAll = null, selectWrong = null, selectFav = null, selectRecent = null;
 let touchStartX = 0;
@@ -338,10 +328,9 @@ const SWIPE_THRESHOLD = 50;
 const STORAGE_KEY = "electric_wrong_questions";
 const FINISH_KEY  = "electric_finished_questions";
 const FAV_KEY     = "electric_favorite_questions";
-const REC_KEY     = "electric_recycle_questions";      // [{...question, deletedAt}]
-const QB_KEY      = "electric_question_bank";          // 题库持久化（含 addedAt）
-const SEED_FLAG   = "electric_seed_v1_done";           // 旧版种子题库写入标记
-const SEED_V2_FLAG = "electric_seed_v2_done";          // ★ 新版：题目 ID 稳定化迁移标记
+const REC_KEY     = "electric_recycle_questions";      // 新增：[{...question, deletedAt}]
+const QB_KEY      = "electric_question_bank";          // 新增：题库持久化（含 addedAt）
+const SEED_FLAG   = "electric_seed_v1_done";            // 新增：种子题库写入标记
 
 /* =========================================================
    持久化
@@ -353,70 +342,47 @@ function loadStorage(){
         try{ questions = JSON.parse(qb); }catch(e){ questions = []; }
     }
     if(!questions || questions.length===0){
-        // 首次：把种子题库写入并打 addedAt + id
+        // 首次：把种子题库写入并打 addedAt
         const now = Date.now();
-        questions = SEED_QUESTIONS.map((q,i)=>({ ...q, id: genQId(q.q), addedAt: now - (SEED_QUESTIONS.length - i) * 1000 }));
+        questions = SEED_QUESTIONS.map((q,i)=>({ ...q, addedAt: now - (SEED_QUESTIONS.length - i) * 1000 }));
         localStorage.setItem(QB_KEY, JSON.stringify(questions));
         localStorage.setItem(SEED_FLAG, "1");
-        localStorage.setItem(SEED_V2_FLAG, "1");
     }else{
         // 兼容：老题库若没 addedAt，依次补上（用 now - 顺序*1000，模拟"老题更早"）
         let patched = false;
         const now = Date.now();
         questions.forEach((q,i)=>{
             if(typeof q.addedAt !== "number"){ q.addedAt = now - (questions.length - i) * 60000; patched = true; }
-            // 老题库若没 id，补上（基于题干生成稳定 id）
-            if(!q.id){ q.id = genQId(q.q); patched = true; }
         });
         if(patched) localStorage.setItem(QB_KEY, JSON.stringify(questions));
+
+        // ★ 预览版特性：检测是否有新种子题需要追加（按题干匹配）
+        const existingQs = new Set(questions.map(q => q.q));
+        const newOnes = SEED_QUESTIONS.filter(sq => !existingQs.has(sq.q));
+        if(newOnes.length > 0){
+            // 把新种子题追加到末尾，addedAt 设为最大，确保排在最近新增最前
+            const maxAddedAt = Math.max(...questions.map(q => q.addedAt || 0), Date.now());
+            newOnes.forEach((sq, i) => {
+                questions.push({ ...sq, addedAt: maxAddedAt + (i + 1) * 1000000 });
+            });
+            localStorage.setItem(QB_KEY, JSON.stringify(questions));
+        }
     }
 
-    // 2) 错题 / 完成 / 收藏 / 回收站
-    wrongList   = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    finished    = JSON.parse(localStorage.getItem(FINISH_KEY)  || "[]");
-    favoriteList= JSON.parse(localStorage.getItem(FAV_KEY)     || "[]");
-    recycleList = JSON.parse(localStorage.getItem(REC_KEY) || "[]");
+    // 2) 错题
+    wrongList = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    // 3) 完成
+    finished  = JSON.parse(localStorage.getItem(FINISH_KEY)  || "[]");
+    // 4) 收藏
+    favoriteList = JSON.parse(localStorage.getItem(FAV_KEY) || "[]");
+    // 5) 回收站
+    recycleList  = JSON.parse(localStorage.getItem(REC_KEY) || "[]");
 
-    // ★★★ 迁移：把旧的数字下标 ID 转换为新的字符串 ID ★★★
-    if(localStorage.getItem(SEED_V2_FLAG) !== "1"){
-        // 确保每道题都有 id（理论上前面已经补过，这里再保险一次）
-        questions.forEach(q=>{ if(!q.id) q.id = genQId(q.q); });
-        localStorage.setItem(QB_KEY, JSON.stringify(questions));
-
-        // 转换函数：把可能是数字下标的旧 id 转换为字符串 id
-        const migrateIdList = (arr) => {
-            return arr.map(oldId => {
-                if(typeof oldId === 'number'){
-                    // 旧格式：数字下标，用 questions[数字].id 转换
-                    const q = questions[oldId];
-                    return q ? q.id : null;
-                }
-                return oldId;   // 新格式：字符串 id 原样返回
-            }).filter(x => x !== null && x !== undefined);
-        };
-
-        wrongList     = migrateIdList(wrongList);
-        finished      = migrateIdList(finished);
-        favoriteList  = migrateIdList(favoriteList);
-
-        // 回收站里的题对象也要补 id
-        recycleList.forEach(item => {
-            if(!item.id) item.id = genQId(item.q);
-        });
-
-        // 持久化迁移结果
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(wrongList));
-        localStorage.setItem(FINISH_KEY,  JSON.stringify(finished));
-        localStorage.setItem(FAV_KEY,     JSON.stringify(favoriteList));
-        localStorage.setItem(REC_KEY,     JSON.stringify(recycleList));
-        localStorage.setItem(SEED_V2_FLAG, "1");
-    }
-
-    // 6) 清理无效 id（保留 qMap 中存在的 id）
-    rebuildQMap();
-    wrongList     = wrongList.filter(id => qMap.has(id));
-    finished      = finished.filter(id => qMap.has(id));
-    favoriteList  = favoriteList.filter(id => qMap.has(id));
+    // 6) 清理越界 id
+    const validLen = questions.length;
+    wrongList     = wrongList.filter(i=>i>=0 && i<validLen);
+    finished      = finished.filter(i=>i>=0 && i<validLen);
+    favoriteList  = favoriteList.filter(i=>i>=0 && i<validLen);
 
     rebuildRecent();
     rebuildAllVisible();
@@ -429,20 +395,19 @@ function saveFav(){localStorage.setItem(FAV_KEY,JSON.stringify(favoriteList));up
 function saveRecycle(){localStorage.setItem(REC_KEY,JSON.stringify(recycleList));updateRecycleUI();}
 function saveBank(){localStorage.setItem(QB_KEY,JSON.stringify(questions));}
 
-/* 重建 id → 题对象 的 Map（每次题库变化后都要调用） */
-function rebuildQMap(){
-    qMap = new Map(questions.map(q => [q.id, q]));
-}
-
 function rebuildAllVisible(){
-    allVisibleList = questions.map(q => q.id);
+    allVisibleList = questions.map((_,i)=>i);
     if(allIndex >= allVisibleList.length) allIndex = 0;
 }
 function rebuildRecent(){
-    // 按 addedAt 倒序的字符串 id 列表
-    const order = questions.map(q => ({id: q.id, t: q.addedAt || 0}))
-                           .sort((a,b) => b.t - a.t)
-                           .map(o => o.id);
+    // 「最近新增」只显示用户添加的题目（不含种子题）
+    // 通过题干匹配种子题，过滤掉
+    const seedQs = new Set(SEED_QUESTIONS.map(sq => sq.q));
+    const order = questions
+        .map((q,i)=>({i, t:q.addedAt||0}))
+        .filter(o => !seedQs.has(questions[o.i].q))   // 只保留用户添加的
+        .sort((a,b)=>b.t-a.t)
+        .map(o=>o.i);
     recentList = order;
     if(recentIndex >= recentList.length) recentIndex = 0;
 }
@@ -474,20 +439,25 @@ function clearAllFavorite(){
    ========================================================= */
 function moveToRecycle(qId, fromListName, fromArr){
     if(qId===undefined||qId===null) return;
-    const q = qMap.get(qId);
+    const q = questions[qId];
     if(!q) return;
-    // 推入回收站（保留 id，记录删除时间）
-    recycleList.push({...q, deletedAt: Date.now()});
+    // 推入回收站
+    recycleList.push({...q, _origId:qId, deletedAt: Date.now()});
     saveRecycle();
     // 从错题/收藏/完成 中清除该 id
     wrongList = wrongList.filter(i=>i!==qId); saveStorage();
     favoriteList = favoriteList.filter(i=>i!==qId); saveFav();
     finished = finished.filter(i=>i!==qId); saveFinish();
-    // 从题库中真删（按 id 查找）
-    const idx = questions.findIndex(x => x.id === qId);
-    if(idx > -1) questions.splice(idx, 1);
+    // 从题库中真删
+    questions.splice(qId,1);
     saveBank();
-    rebuildQMap();
+    // 所有引用此 id 的列表都要修正：>=qId 的 id 减 1
+    [wrongList, favoriteList, finished].forEach(arr=>{
+        for(let i=0;i<arr.length;i++){ if(arr[i] > qId) arr[i] -= 1; }
+    });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(wrongList));
+    localStorage.setItem(FAV_KEY,     JSON.stringify(favoriteList));
+    localStorage.setItem(FINISH_KEY,  JSON.stringify(finished));
     // 重建索引
     rebuildAllVisible();
     rebuildRecent();
@@ -519,13 +489,15 @@ function restoreCurrent(){
     if(!item) return;
     // 重新入题库（放最前面当作"新增"）
     const restored = {...item};
-    delete restored.deletedAt;
+    delete restored._origId; delete restored.deletedAt;
     restored.addedAt = Date.now();
-    // 确保有 id
-    if(!restored.id) restored.id = genQId(restored.q);
     questions.unshift(restored);
     saveBank();
-    rebuildQMap();
+    // 同步修正其他列表：所有 id +1（因为前面插了一条）
+    [wrongList, favoriteList, finished].forEach(arr=>{ for(let i=0;i<arr.length;i++) arr[i]+=1; });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(wrongList));
+    localStorage.setItem(FAV_KEY,     JSON.stringify(favoriteList));
+    localStorage.setItem(FINISH_KEY,  JSON.stringify(finished));
     // 从回收站移除
     recycleList.splice(recycleIndex,1);
     saveRecycle();
@@ -620,15 +592,16 @@ function clearUserAddedQuestions(){
     if(!confirm(`确认清空用户添加的题目？\n\n当前题库共 ${total} 道\n其中种子题：${seedCount} 道（保留）\n用户添加：${userCount} 道（将被清空）\n\n注意：错题、收藏、完成记录中如果引用了被删的题，会自动清理`)){
         return;
     }
-    // 用 id 过滤：保留所有种子题（按题干匹配）
-    const seedQs = new Set(SEED_QUESTIONS.map(sq => sq.q));
-    questions = questions.filter(q => seedQs.has(q.q));
+    // 保留前 seedCount 道（按 addedAt 最小的种子题）
+    // 先排序找出种子题（种子题是按顺序加入的，addedAt 是 now - (len-i)*1000）
+    const seedAt = SEED_QUESTIONS.map((_,i)=>0).length;
+    // 简单方案：保留 addedAt 最小的 seedCount 道（即最早的）
+    questions = questions.slice().sort((a,b)=>(a.addedAt||0)-(b.addedAt||0)).slice(0, seedCount);
     saveBank();
-    rebuildQMap();
-    // 清理错题/收藏/完成记录中无效的 id
-    wrongList = wrongList.filter(id => qMap.has(id));
-    finished = finished.filter(id => qMap.has(id));
-    favoriteList = favoriteList.filter(id => qMap.has(id));
+    // 清理错题/收藏/完成记录中越界的 id
+    wrongList = wrongList.filter(i=>i>=0 && i<questions.length);
+    finished = finished.filter(i=>i>=0 && i<questions.length);
+    favoriteList = favoriteList.filter(i=>i>=0 && i<questions.length);
     saveStorage();saveFinish();saveFav();
     rebuildRecent();rebuildAllVisible();updateAllUI();
     renderAll();renderRecent();
@@ -699,8 +672,7 @@ function renderAll(){
     }
     if(allIndex >= allVisibleList.length) allIndex=0;
     const id = allVisibleList[allIndex];
-    const item = qMap.get(id);
-    if(!item){ return; }
+    const item = questions[id];
     const box = document.getElementById('allQBox');
     const done = finished.includes(id);
     const fav = favoriteList.includes(id);
@@ -724,12 +696,11 @@ function clickCheckAll(i){
     document.querySelectorAll('#allOpts .opt').forEach(el=>el.classList.remove('selected'));
     document.getElementById(`a${i}`).classList.add('selected');
     const id = allVisibleList[allIndex];
-    const item = qMap.get(id);
-    if(!item) return;
+    const item = questions[id];
     const tip = document.getElementById('allTip');
     const ana = document.getElementById('allAnalysis');
     ana.style.display = 'block';
-    ana.innerHTML = `<h4>完整解析</h4><p>${(item.expl||'').replaceAll("\n","<br>")}</p>`;
+    ana.innerHTML = `<h4>完整解析</h4><p>${(item.explain||'').replaceAll("\n","<br>")}</p>`;
     if(i === item.ans){
         tip.className = 'tip right';
         tip.innerText = "回答正确！自动跳转下一题";
@@ -752,7 +723,7 @@ function renderWrong(){
     if(wrongList.length===0) return;
     if(wrongIndex >= wrongList.length) wrongIndex=0;
     const qid = wrongList[wrongIndex];
-    const item = qMap.get(qid);
+    const item = questions[qid];
     if(!item) return;
     const fav = favoriteList.includes(qid);
     const star = document.getElementById('starWrongBtn');
@@ -772,12 +743,11 @@ function clickCheckWrong(i){
     document.querySelectorAll('#wrongOpts .opt').forEach(el=>el.classList.remove('selected'));
     document.getElementById(`w${i}`).classList.add('selected');
     const qid = wrongList[wrongIndex];
-    const item = qMap.get(qid);
-    if(!item) return;
+    const item = questions[qid];
     const tip = document.getElementById('wrongTip');
     const ana = document.getElementById('wrongAnalysis');
     ana.style.display = 'block';
-    ana.innerHTML = `<h4>完整解析</h4><p>${(item.expl||'').replaceAll("\n","<br>")}</p>`;
+    ana.innerHTML = `<h4>完整解析</h4><p>${(item.explain||'').replaceAll("\n","<br>")}</p>`;
     if(i === item.ans){
         tip.className = 'tip right';
         tip.innerText = "答对，移出错题本";
@@ -800,7 +770,7 @@ function renderFavorite(){
     if(favoriteList.length===0) return;
     if(favIndex >= favoriteList.length) favIndex=0;
     const qid = favoriteList[favIndex];
-    const item = qMap.get(qid);
+    const item = questions[qid];
     if(!item) return;
     const star = document.getElementById('starFavBtn');
     star.className="star-btn star-on"; star.innerText="★";
@@ -818,12 +788,11 @@ function clickCheckFav(i){
     document.querySelectorAll('#favOpts .opt').forEach(el=>el.classList.remove('selected'));
     document.getElementById(`f${i}`).classList.add('selected');
     const qid = favoriteList[favIndex];
-    const item = qMap.get(qid);
-    if(!item) return;
+    const item = questions[qid];
     const tip = document.getElementById('favTip');
     const ana = document.getElementById('favAnalysis');
     ana.style.display = 'block';
-    ana.innerHTML = `<h4>完整解析</h4><p>${(item.expl||'').replaceAll("\n","<br>")}</p>`;
+    ana.innerHTML = `<h4>完整解析</h4><p>${(item.explain||'').replaceAll("\n","<br>")}</p>`;
     if(i === item.ans){
         tip.className = 'tip right';
         tip.innerText = "回答正确";
@@ -846,7 +815,7 @@ function renderRecent(){
     if(recentList.length===0) return;
     if(recentIndex >= recentList.length) recentIndex=0;
     const qid = recentList[recentIndex];
-    const item = qMap.get(qid);
+    const item = questions[qid];
     if(!item) return;
     const fav = favoriteList.includes(qid);
     const star = document.getElementById('starRecentBtn');
@@ -866,12 +835,11 @@ function clickCheckRecent(i){
     document.querySelectorAll('#recentOpts .opt').forEach(el=>el.classList.remove('selected'));
     document.getElementById(`r${i}`).classList.add('selected');
     const qid = recentList[recentIndex];
-    const item = qMap.get(qid);
-    if(!item) return;
+    const item = questions[qid];
     const tip = document.getElementById('recentTip');
     const ana = document.getElementById('recentAnalysis');
     ana.style.display = 'block';
-    ana.innerHTML = `<h4>完整解析</h4><p>${(item.expl||'').replaceAll("\n","<br>")}</p>`;
+    ana.innerHTML = `<h4>完整解析</h4><p>${(item.explain||'').replaceAll("\n","<br>")}</p>`;
     if(i === item.ans){
         tip.className = 'tip right';
         tip.innerText = "回答正确";
@@ -895,8 +863,7 @@ function renderRecycle(){
     if(recycleIndex >= recycleList.length) recycleIndex=0;
     const item = recycleList[recycleIndex];
     if(!item) return;
-    // 用题对象自身的 id 判断收藏状态
-    const fav = item.id ? favoriteList.includes(item.id) : false;
+    const fav = favoriteList.includes(item._origId);
     const star = document.getElementById('starRecycleBtn');
     if(fav){star.className="star-btn star-on";star.innerText="★";}
     else{star.className="star-btn star-off";star.innerText="☆";}
@@ -908,7 +875,7 @@ function renderRecycle(){
     let optHtml = '';
     item.opts.forEach((opt,i)=>optHtml += `<div class="opt">${opt}</div>`);
     document.getElementById('recycleOpts').innerHTML = optHtml;
-    // 收藏按钮在回收站其实无效（题已不在题库），但仍展示状态
+    // 收藏按钮在回收站其实无效（id 已失效），但仍展示状态
 }
 
 /* =========================================================
@@ -951,6 +918,12 @@ function openOcrModal(){
 }
 function closeOcrModal(){
     document.getElementById('ocrModal').style.display = 'none';
+}
+
+/* 点击「📷上传题目」按钮：显示上传指引
+   用户本来就在 WorkBuddy APP 里，只需要切回对话发送截图 */
+function goUploadPage(){
+    alert('📝 上传题目步骤\n\n1️⃣ 退出当前网页，回到手机主屏幕\n\n2️⃣ 打开你想做题的 APP，截图题目\n\n3️⃣ 切回 WorkBuddy APP（你正在用的这个 APP）\n\n4️⃣ 在 WorkBuddy 对话框发送题目截图\n\n5️⃣ 告诉助手：\"OCR识别并加入题库\"\n\n6️⃣ 助手自动处理并部署完成后\n\n7️⃣ 回到本页面，下拉刷新即可看到新题\n\n💡 提示：助手会自动完成 OCR + 智能解析 + 入题库 + 部署');
 }
 function resetOcrForm(){
     ocrCurrentImage = null;
@@ -1162,7 +1135,6 @@ function addToBank(parsed){
     }
 
     const newQ = {
-        id: genQId(q),
         type: type,
         q: q,
         opts: finalOpts,
@@ -1175,7 +1147,6 @@ function addToBank(parsed){
     };
     questions.push(newQ);
     saveBank();
-    rebuildQMap();
     rebuildRecent();
     rebuildAllVisible();
     updateAllUI();
@@ -1290,7 +1261,6 @@ function addParsedToBank(){
     }
 
     const newQ = {
-        id: genQId(q),
         type: type,
         q: q,
         opts: finalOpts,
@@ -1301,7 +1271,6 @@ function addParsedToBank(){
 
     questions.push(newQ);
     saveBank();
-    rebuildQMap();
     rebuildRecent();
     rebuildAllVisible();
     updateAllUI();
