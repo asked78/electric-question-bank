@@ -162,6 +162,40 @@ q = q.replace(/^[\d]+[\.、\::\s]+/, '').trim();
 - 2026-07-20 00:48 - preview.html 创建（新上传流程）
 - 2026-07-20 01:04 - 简化上传按钮为操作指引
 
+## 📐 必须遵守的规则
+
+### 规则 1：每次更改必须同时部署到 3 个网站
+
+**每次修改代码后，必须依次执行：**
+
+```bash
+cd /workspace/project
+git add -A
+git commit -m "update: <描述>"
+git push origin main                          # 1️⃣ 推送到 GitHub
+vercel deploy --prod --yes                    # 2️⃣ 部署到 Vercel
+# 3️⃣ jsDelivr CDN 会自动从 GitHub 同步（10 分钟内）
+```
+
+**3 个网站的作用：**
+
+| 网站 | 地址 | 作用 |
+|------|------|------|
+| 1️⃣ GitHub | https://github.com/asked78/electric-question-bank | 永久保存代码 + AGENT.md 后门 |
+| 2️⃣ Vercel | https://electric-question-bank.vercel.app | 在线访问（需 VPN） |
+| 3️⃣ jsDelivr CDN | https://cdn.jsdelivr.net/gh/asked78/electric-question-bank@main/preview.html | 国内直连（自动同步） |
+
+### 规则 2：不能覆盖用户的做题记录
+
+- 题目有稳定字符串 ID（基于题干生成）
+- 加题/删题不影响用户的错题/收藏/完成记录
+- 通过 `genQId()` 函数保证 ID 稳定
+
+### 规则 3：保留 AGENT.md 后门文件
+
+- 每次重大更新都要更新 AGENT.md 的"项目历史"
+- AGENT.md 是恢复项目上下文的关键
+
 ## 🆘 紧急恢复
 
 如果 Vercel 部署出问题：
