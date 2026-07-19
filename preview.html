@@ -747,10 +747,28 @@ function logout(){
 async function onLoginSuccess(){
     const status = document.getElementById('cloudStatus');
     if(status){
-        status.innerHTML = `👤 已登录：<b>${currentUsername}</b><br>正在从云端恢复...`;
+        status.innerHTML = `👤 已登录：<b>${currentUsername}</b><br>⏳ 正在从云端恢复...`;
     }
-    // 自动从云端恢复
-    await cloudRestore(true);
+    console.log('[onLoginSuccess] 开始云端恢复, username:', currentUsername);
+    
+    // 自动从云端恢复（强制模式，不弹确认框）
+    try{
+        await cloudRestore(true);
+        console.log('[onLoginSuccess] 云端恢复完成');
+    }catch(e){
+        console.error('[onLoginSuccess] 云端恢复失败:', e);
+        if(status){
+            status.innerHTML = `👤 已登录：<b>${currentUsername}</b><br>❌ 恢复失败：${e.message}`;
+        }
+    }
+    
+    // ★ 登录后立即触发一次自动备份，把本地数据合并到云端
+    setTimeout(() => {
+        if(autoBackupEnabled && currentUsername){
+            console.log('[onLoginSuccess] 触发首次备份');
+            cloudBackup();
+        }
+    }, 2000);
 }
 
 /* 收集当前所有做题数据 */
@@ -932,9 +950,14 @@ async function cloudRestore(autoRestore = false){
             return;
         }
         const data = result.data;
+        console.log('[cloudRestore] 云端数据:', JSON.stringify(data).substring(0, 200));
+        console.log('[cloudRestore] 本地数据 - 完成:', finished.length, '错题:', wrongList.length, '收藏:', favoriteList.length);
+        
         const success = applyProgressData(data, autoRestore);
+        console.log('[cloudRestore] 合并后 - 完成:', finished.length, '错题:', wrongList.length, '收藏:', favoriteList.length);
+        
         if(success && status){
-            status.innerHTML = `✅ 恢复成功！<br>👤 ${currentUsername} | 完成 ${data.stats?.completedCount || 0} 题`;
+            status.innerHTML = `✅ 恢复成功！<br>👤 ${currentUsername}<br>合并后：完成 ${finished.length} 题 / 错题 ${wrongList.length} / 收藏 ${favoriteList.length}`;
         }
     }catch(e){
         console.error('[cloudRestore] 错误:', e);
