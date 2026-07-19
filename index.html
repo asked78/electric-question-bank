@@ -1224,12 +1224,15 @@ function addParsedToBank(){
 <div id="ocrModal" class="modal-mask" style="display:none">
     <div class="modal-body">
         <h3>
-            <span>📷 拍/选题目截图</span>
+            <span>📷 上传题目截图</span>
             <button class="close-x" onclick="closeOcrModal()">×</button>
         </h3>
 
         <!-- 选图（选完自动完成全流程） -->
-        <input type="file" id="ocrFile" class="ocr-input" accept="image/*" onchange="onOcrFileChange(this)" capture="environment">
+        <label for="ocrFile" style="display:block;background:#dc2626;color:#fff;padding:18px;border-radius:10px;text-align:center;cursor:pointer;font-size:16px;font-weight:600;margin-bottom:10px">
+            📁 点击选择图片（截图/相册）
+        </label>
+        <input type="file" id="ocrFile" accept="image/*" onchange="onOcrFileChange(this)" style="display:none">
         <img id="ocrPreview" class="ocr-preview-img" style="display:none">
 
         <!-- 状态提示 -->
@@ -1240,7 +1243,7 @@ function addParsedToBank(){
 
         <!-- 详情区（默认折叠，识别失败时让用户手动填） -->
         <details id="ocrDetails" style="margin-top:10px">
-            <summary style="cursor:pointer;color:#6b7280;font-size:13px;padding:6px">📝 手动编辑（识别失败时用）</summary>
+            <summary style="cursor:pointer;color:#6b7280;font-size:13px;padding:6px">📝 手动编辑（识别失败时用，点击展开）</summary>
             <div style="margin-top:10px">
                 <div class="row-2col">
                     <select id="parseType" class="ocr-input" onchange="onParseTypeChange(this)">
