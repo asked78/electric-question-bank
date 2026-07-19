@@ -25,8 +25,8 @@ vercel deploy --prod --yes
 |------|------|------|
 | GitHub | 账号 asked78 | ✅ 已授权 `gh auth` |
 | Vercel | 账号 1184893511-4406 | ✅ 已授权 `vercel login` |
-| 百度 OCR AK | `bEqAXMhhLT4NB7YGesStYncL` | ✅ 已配置在 Vercel 环境变量 |
-| 百度 OCR SK | `8l8J6J7L77RhW31m85Rw7cRYeWKJ4QLf` | ✅ 已配置在 Vercel 环境变量 |
+| 百度 OCR AK | （已配置在 Vercel 环境变量，出于安全不写入公开文件） | ✅ 已配置 |
+| 百度 OCR SK | （已配置在 Vercel 环境变量，出于安全不写入公开文件） | ✅ 已配置 |
 
 ## 🆔 题目 ID 系统（重要！2026-07-20 升级）
 
@@ -71,13 +71,18 @@ vercel deploy --prod --yes
 2. **调用百度 OCR**：
 
 ```python
-import base64, json, urllib.request, urllib.parse
+import base64, json, urllib.request, urllib.parse, os
 
 with open('/tmp/user_question.jpg', 'rb') as f:
     img_b64 = base64.b64encode(f.read()).decode()
 
-AK = "bEqAXMhhLT4NB7YGesStYncL"
-SK = "8l8J6J7L77RhW31m85Rw7cRYeWKJ4QLf"
+# ⚠️ AK/SK 已从公开文件删除！
+# 新对话如需 OCR，请让用户从百度云控制台查看并提供：
+# https://console.bce.baidu.com/ai/#/ai/ocr/app/list
+# 或者直接调用 Vercel 已部署的云函数 /api/ocr（无需 AK/SK）
+# 示例：curl -X POST https://electric-question-bank.vercel.app/api/ocr -H "Content-Type: application/json" -d '{"image":"<base64>"}'
+AK = os.environ.get("BAIDU_OCR_AK", "")  # 从环境变量读取，或让用户提供
+SK = os.environ.get("BAIDU_OCR_SK", "")
 
 # 获取 token
 token_resp = urllib.request.urlopen(
