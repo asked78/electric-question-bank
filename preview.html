@@ -780,18 +780,32 @@ function applyProgressData(data, autoRestore = false){
         return false;
     }
     if(!autoRestore){
-        if(!confirm(`从云端恢复做题记录？\n\n云端备份时间：${new Date(data.lastUpdated).toLocaleString()}\n完成：${data.stats?.completedCount || 0} 题\n错题：${data.stats?.wrongCount || 0} 题\n收藏：${data.stats?.favoriteCount || 0} 题\n\n注意：这会覆盖当前的本地记录`)){
+        if(!confirm(`从云端恢复做题记录？\n\n云端备份时间：${new Date(data.lastUpdated).toLocaleString()}\n完成：${data.stats?.completedCount || 0} 题\n错题：${data.stats?.wrongCount || 0} 题\n收藏：${data.stats?.favoriteCount || 0} 题\n\n注意：将与本地数据合并（取并集），不会丢失本地进度`)){
             return false;
         }
     }
-    wrongList = data.wrongList || [];
-    finished = data.finished || [];
-    favoriteList = data.favoriteList || [];
-    // 清理越界 id
+    
+    // ★ 合并云端和本地数据（取并集），而不是覆盖
+    const cloudWrong = new Set(data.wrongList || []);
+    const cloudFinished = new Set(data.finished || []);
+    const cloudFav = new Set(data.favoriteList || []);
+    
+    // 本地数据加入并集
+    wrongList.forEach(id => cloudWrong.add(id));
+    finished.forEach(id => cloudFinished.add(id));
+    favoriteList.forEach(id => cloudFav.add(id));
+    
+    // 更新为合并后的数据
+    wrongList = Array.from(cloudWrong);
+    finished = Array.from(cloudFinished);
+    favoriteList = Array.from(cloudFav);
+    
+    // 清理无效 id
     const validIds = new Set(questions.map(q => q.id));
     wrongList = wrongList.filter(id => validIds.has(id));
     finished = finished.filter(id => validIds.has(id));
     favoriteList = favoriteList.filter(id => validIds.has(id));
+    
     saveStorage(); saveFinish(); saveFav();
     rebuildRecent(); rebuildAllVisible(); updateAllUI();
     renderAll();
@@ -808,8 +822,49 @@ async function cloudBackup(){
     const btn = document.getElementById("cloudBackupBtn");
     const status = document.getElementById("cloudStatus");
     if(btn){ btn.disabled = true; btn.innerHTML = "⏳ 备份中..."; }
-    if(status){ status.innerText = "正在上传到云端..."; }
+    if(status){ status.innerText = "正在同步云端数据..."; }
     try{
+        // ★ 关键：先下载云端数据，合并后再上传（避免覆盖其他设备的进度）
+        let cloudData = null;
+        try{
+            const getResp = await fetch(`/api/progress?username=${encodeURIComponent(currentUsername)}`, { cache: 'no-store' });
+            if(getResp.ok){
+                const getResult = await getResp.json();
+                if(getResult.success && getResult.found){
+                    cloudData = getResult.data;
+                }
+            }
+        }catch(e){ console.log('下载云端数据失败，将直接上传本地数据', e); }
+        
+        // 合并本地和云端数据（取并集）
+        if(cloudData && cloudData.version === 2){
+            const cloudWrong = new Set(cloudData.wrongList || []);
+            const cloudFinished = new Set(cloudData.finished || []);
+            const cloudFav = new Set(cloudData.favoriteList || []);
+            
+            // 本地数据加入并集
+            wrongList.forEach(id => cloudWrong.add(id));
+            finished.forEach(id => cloudFinished.add(id));
+            favoriteList.forEach(id => cloudFav.add(id));
+            
+            // 更新本地为合并后的数据
+            wrongList = Array.from(cloudWrong);
+            finished = Array.from(cloudFinished);
+            favoriteList = Array.from(cloudFav);
+            
+            // 清理无效 id
+            const validIds = new Set(questions.map(q => q.id));
+            wrongList = wrongList.filter(id => validIds.has(id));
+            finished = finished.filter(id => validIds.has(id));
+            favoriteList = favoriteList.filter(id => validIds.has(id));
+            
+            // 保存合并后的本地数据
+            saveStorage(); saveFinish(); saveFav();
+            rebuildRecent(); rebuildAllVisible(); updateAllUI();
+            renderAll();
+        }
+        
+        // 上传合并后的数据
         const data = collectProgressData();
         const resp = await fetch('/api/progress', {
             method: 'POST',
@@ -826,7 +881,7 @@ async function cloudBackup(){
         const time = new Date().toLocaleString();
         localStorage.setItem("electric_last_backup", time);
         if(status){
-            status.innerHTML = `✅ 备份成功！${time}<br>👤 用户：${currentUsername} | 完成 ${data.stats.completedCount} 题 / 错题 ${data.stats.wrongCount} / 收藏 ${data.stats.favoriteCount}`;
+            status.innerHTML = `✅ 同步成功！${time}<br>👤 ${currentUsername} | 完成 ${data.stats.completedCount} 题 / 错题 ${data.stats.wrongCount} / 收藏 ${data.stats.favoriteCount}<br><small>已合并多设备数据</small>`;
         }
         if(btn){ btn.innerHTML = "☁️ 立即备份到云端"; }
     }catch(e){
