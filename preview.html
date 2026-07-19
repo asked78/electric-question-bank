@@ -921,59 +921,10 @@ function closeOcrModal(){
     document.getElementById('ocrModal').style.display = 'none';
 }
 
-/* 点击「📷上传题目」按钮：唤起 WorkBuddy 手机 APP
-   - iOS/Android 都尝试用 workbuddy:// scheme 唤起
-   - 如果 APP 没安装，3 秒后跳转下载页 */
+/* 点击「📷上传题目」按钮：显示上传指引
+   用户本来就在 WorkBuddy APP 里，只需要切回对话发送截图 */
 function goUploadPage(){
-    // 弹出确认框说明流程
-    const ok = confirm('📝 上传题目方式\n\n点击「确定」打开 WorkBuddy APP，然后：\n\n1. 截图你的题目\n2. 在 WorkBuddy 对话发送图片\n3. 告诉助手："OCR识别并加入题库"\n4. 助手会自动 OCR + 解析 + 部署\n5. 完成后回到本页面，下拉刷新即可看到新题\n\n点击「取消」返回题库');
-    if(!ok) return;
-
-    // 记录开始时间，用于检测 APP 是否成功唤起
-    const start = Date.now();
-    let hasApp = false;
-
-    // 监听页面可见性变化（如果 APP 唤起成功，浏览器会进入后台）
-    const onVisibility = function(){
-        if(document.hidden && Date.now() - start < 3000){
-            hasApp = true;
-        }
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-
-    // 尝试唤起 APP（iOS 和 Android 通用方案）
-    // 1. 先尝试 workbuddy:// scheme
-    let iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    iframe.src = 'workbuddy://';
-    document.body.appendChild(iframe);
-
-    // 2. 2.5 秒后检查 APP 是否唤起，没唤起就跳到下载页
-    setTimeout(function(){
-        document.body.removeChild(iframe);
-        document.removeEventListener('visibilitychange', onVisibility);
-
-        if(!hasApp && Date.now() - start < 4000){
-            // APP 没安装，跳转到下载页
-            const ua = navigator.userAgent.toLowerCase();
-            let downloadUrl;
-            if(/iphone|ipad|ipod/.test(ua)){
-                // iOS 应用商店
-                downloadUrl = 'https://apps.apple.com/cn/app/workbuddy/id6740960065';
-            }else if(/android/.test(ua)){
-                // Android 应用宝
-                downloadUrl = 'https://app.mi.com/details?id=com.tencent.workbuddy.app';
-            }else{
-                // 其他平台，跳官网
-                downloadUrl = 'https://www.workbuddy.cn/';
-            }
-            if(confirm('未检测到 WorkBuddy APP\n\n点击「确定」前往下载 WorkBuddy APP\n点击「取消」访问 WorkBuddy 网页版')){
-                window.location.href = downloadUrl;
-            }else{
-                window.open('https://www.workbuddy.cn/', '_blank');
-            }
-        }
-    }, 2500);
+    alert('📝 上传题目步骤\n\n1️⃣ 退出当前网页，回到手机主屏幕\n\n2️⃣ 打开你想做题的 APP，截图题目\n\n3️⃣ 切回 WorkBuddy APP（你正在用的这个 APP）\n\n4️⃣ 在 WorkBuddy 对话框发送题目截图\n\n5️⃣ 告诉助手：\"OCR识别并加入题库\"\n\n6️⃣ 助手自动处理并部署完成后\n\n7️⃣ 回到本页面，下拉刷新即可看到新题\n\n💡 提示：助手会自动完成 OCR + 智能解析 + 入题库 + 部署');
 }
 function resetOcrForm(){
     ocrCurrentImage = null;
