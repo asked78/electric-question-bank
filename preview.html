@@ -848,18 +848,29 @@ async function cloudRestore(autoRestore = false){
         status.innerText = "正在从云端下载...";
     }
     try{
-        const resp = await fetch(`/api/progress?username=${encodeURIComponent(currentUsername)}`, {
+        // ★ 调试：显示当前用户名和请求 URL
+        const apiUrl = `/api/progress?username=${encodeURIComponent(currentUsername)}`;
+        console.log('[cloudRestore] 请求 URL:', apiUrl, '用户名:', currentUsername);
+        if(autoRestore && status){
+            status.innerHTML = `👤 已登录：<b>${currentUsername}</b><br>正在从云端下载...<br><small style="color:#888">请求: ${apiUrl}</small>`;
+        }
+        
+        const resp = await fetch(apiUrl, {
             cache: 'no-store'
         });
-        if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        console.log('[cloudRestore] 响应状态:', resp.status, resp.statusText);
+        
+        if(!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
         const result = await resp.json();
+        console.log('[cloudRestore] 响应数据:', result);
+        
         if(!result.success){
             throw new Error(result.error || 'Unknown error');
         }
         if(!result.found){
             // 该用户还没有云端记录
             if(autoRestore && status){
-                status.innerHTML = `👤 已登录：<b>${currentUsername}</b><br><small>云端暂无该用户的做题记录，开始做题后会自动备份</small>`;
+                status.innerHTML = `👤 已登录：<b>${currentUsername}</b><br><small style="color:#f59e0b">云端暂无该用户的做题记录<br>开始做题后会自动备份</small>`;
             }else if(status){
                 status.innerHTML = `ℹ️ 云端暂无该用户的做题记录`;
             }
@@ -871,8 +882,9 @@ async function cloudRestore(autoRestore = false){
             status.innerHTML = `✅ 恢复成功！<br>👤 ${currentUsername} | 完成 ${data.stats?.completedCount || 0} 题`;
         }
     }catch(e){
+        console.error('[cloudRestore] 错误:', e);
         if(status){
-            status.innerHTML = `❌ 恢复失败：${e.message}`;
+            status.innerHTML = `❌ 恢复失败：${e.message}<br><small style="color:#888">请检查网络连接，或联系助手</small>`;
         }
     }finally{
         if(btn){ btn.disabled = false; btn.innerHTML = "🔄 从云端恢复"; }
