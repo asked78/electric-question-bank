@@ -839,36 +839,32 @@ async function cloudBackup(){
     }
     const btn = document.getElementById("cloudBackupBtn");
     const status = document.getElementById("cloudStatus");
-    if(btn){ btn.disabled = true; btn.innerHTML = "⏳ 备份中..."; }
-    if(status){ status.innerText = "正在同步云端数据..."; }
+    if(btn){ btn.disabled = true; btn.innerHTML = "⏳ 同步中..."; }
+    if(status){ status.innerText = "正在同步云端数据（后端合并）..."; }
     try{
-        // ★ 关键：先下载云端数据，合并后再上传（避免覆盖其他设备的进度）
-        let cloudData = null;
-        try{
-            const getResp = await fetch(`/api/progress?username=${encodeURIComponent(currentUsername)}`, { cache: 'no-store' });
-            if(getResp.ok){
-                const getResult = await getResp.json();
-                if(getResult.success && getResult.found){
-                    cloudData = getResult.data;
-                }
-            }
-        }catch(e){ console.log('下载云端数据失败，将直接上传本地数据', e); }
+        // 收集本地数据
+        const localData = collectProgressData();
         
-        // 合并本地和云端数据（取并集）
-        if(cloudData && cloudData.version === 2){
-            const cloudWrong = new Set(cloudData.wrongList || []);
-            const cloudFinished = new Set(cloudData.finished || []);
-            const cloudFav = new Set(cloudData.favoriteList || []);
-            
-            // 本地数据加入并集
-            wrongList.forEach(id => cloudWrong.add(id));
-            finished.forEach(id => cloudFinished.add(id));
-            favoriteList.forEach(id => cloudFav.add(id));
-            
-            // 更新本地为合并后的数据
-            wrongList = Array.from(cloudWrong);
-            finished = Array.from(cloudFinished);
-            favoriteList = Array.from(cloudFav);
+        // 发送到后端，后端会先读取云端、合并、再写入
+        const resp = await fetch('/api/progress', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username: currentUsername,
+                data: localData
+            })
+        });
+        const result = await resp.json();
+        if(!resp.ok || !result.success){
+            throw new Error(result.error || `HTTP ${resp.status}`);
+        }
+        
+        // ★ 用后端返回的合并数据更新本地
+        if(result.mergedData){
+            const merged = result.mergedData;
+            wrongList = merged.wrongList || [];
+            finished = merged.finished || [];
+            favoriteList = merged.favoriteList || [];
             
             // 清理无效 id
             const validIds = new Set(questions.map(q => q.id));
@@ -876,35 +872,20 @@ async function cloudBackup(){
             finished = finished.filter(id => validIds.has(id));
             favoriteList = favoriteList.filter(id => validIds.has(id));
             
-            // 保存合并后的本地数据
             saveStorage(); saveFinish(); saveFav();
             rebuildRecent(); rebuildAllVisible(); updateAllUI();
             renderAll();
         }
         
-        // 上传合并后的数据
-        const data = collectProgressData();
-        const resp = await fetch('/api/progress', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                username: currentUsername,
-                data: data
-            })
-        });
-        const result = await resp.json();
-        if(!resp.ok || !result.success){
-            throw new Error(result.error || `HTTP ${resp.status}`);
-        }
         const time = new Date().toLocaleString();
         localStorage.setItem("electric_last_backup", time);
         if(status){
-            status.innerHTML = `✅ 同步成功！${time}<br>👤 ${currentUsername} | 完成 ${data.stats.completedCount} 题 / 错题 ${data.stats.wrongCount} / 收藏 ${data.stats.favoriteCount}<br><small>已合并多设备数据</small>`;
+            status.innerHTML = `✅ 同步成功！${time}<br>👤 ${currentUsername}<br>完成 ${finished.length} 题 / 错题 ${wrongList.length} / 收藏 ${favoriteList.length}<br><small>已与云端合并（取并集）</small>`;
         }
         if(btn){ btn.innerHTML = "☁️ 立即备份到云端"; }
     }catch(e){
         if(status){
-            status.innerHTML = `❌ 备份失败：${e.message}<br><small>请稍后重试，或联系助手</small>`;
+            status.innerHTML = `❌ 同步失败：${e.message}<br><small>请稍后重试</small>`;
         }
         if(btn){ btn.innerHTML = "☁️ 立即备份到云端"; }
     }finally{
