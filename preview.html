@@ -401,10 +401,14 @@ function rebuildAllVisible(){
     if(allIndex >= allVisibleList.length) allIndex = 0;
 }
 function rebuildRecent(){
-    // 按 addedAt 倒序的题 id
-    const order = questions.map((q,i)=>({i, t:q.addedAt||0}))
-                           .sort((a,b)=>b.t-a.t)
-                           .map(o=>o.i);
+    // 「最近新增」只显示用户添加的题目（不含种子题）
+    // 通过题干匹配种子题，过滤掉
+    const seedQs = new Set(SEED_QUESTIONS.map(sq => sq.q));
+    const order = questions
+        .map((q,i)=>({i, t:q.addedAt||0}))
+        .filter(o => !seedQs.has(questions[o.i].q))   // 只保留用户添加的
+        .sort((a,b)=>b.t-a.t)
+        .map(o=>o.i);
     recentList = order;
     if(recentIndex >= recentList.length) recentIndex = 0;
 }
