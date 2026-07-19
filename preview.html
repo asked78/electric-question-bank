@@ -962,15 +962,27 @@ function updateAutoBackupUI(){
     if(btn) btn.innerHTML = `⚙️ 自动备份：${autoBackupEnabled ? '开启中' : '已关闭'}`;
 }
 
-/* 自动备份（每次做题后触发） */
+/* 自动备份（每次做题后触发，防抖 30 秒避免 GitHub API 速率限制） */
 let autoBackupTimer = null;
+let lastBackupTime = 0;
+const AUTO_BACKUP_DEBOUNCE = 30000;  // 30 秒防抖
+const AUTO_BACKUP_MIN_INTERVAL = 60000;  // 最少间隔 60 秒
+
 function scheduleAutoBackup(){
-    if(!autoBackupEnabled || !currentUsername) return;  // 已登录且开启自动备份才执行
-    // 防抖：3 秒内多次做题只备份一次
+    if(!autoBackupEnabled || !currentUsername) return;
+    
+    // 防抖：30 秒内多次做题只备份一次
     if(autoBackupTimer) clearTimeout(autoBackupTimer);
     autoBackupTimer = setTimeout(() => {
+        const now = Date.now();
+        // 最少间隔检查，避免频繁请求 GitHub API
+        if(now - lastBackupTime < AUTO_BACKUP_MIN_INTERVAL){
+            console.log('[scheduleAutoBackup] 距离上次备份不足 60 秒，跳过');
+            return;
+        }
+        lastBackupTime = now;
         cloudBackup();
-    }, 3000);
+    }, AUTO_BACKUP_DEBOUNCE);
 }
 
 /* =========================================================
