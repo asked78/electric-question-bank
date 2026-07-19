@@ -219,8 +219,11 @@
 
     <!-- 云端备份/恢复（用 GitHub Gist） -->
     <div style="margin-top:20px;padding:15px;background:#f0f9ff;border-radius:10px;border:1px solid #bae6fd">
-        <div style="font-size:15px;font-weight:600;color:#0369a1;margin-bottom:8px">☁️ 做题记录云端备份</div>
-        <div style="font-size:12px;color:#64748b;margin-bottom:12px">每次做题自动同步到云端，换设备也能恢复</div>
+        <div style="font-size:15px;font-weight:600;color:#0369a1;margin-bottom:8px">☁️ 做题记录备份</div>
+        <div style="font-size:12px;color:#64748b;margin-bottom:12px">本地备份最可靠，云端备份可跨设备</div>
+        <button id="localBackupBtn" style="padding:12px;background:#7c3aed;color:#fff;border:none;border-radius:8px;width:100%;font-size:14px;margin-bottom:8px" onclick="localBackup()">💾 导出本地备份（下载文件）</button>
+        <button id="localRestoreBtn" style="padding:12px;background:#0891b2;color:#fff;border:none;border-radius:8px;width:100%;font-size:14px;margin-bottom:8px" onclick="localRestore()">📥 导入本地备份（选择文件）</button>
+        <div style="border-top:1px dashed #cbd5e1;margin:10px 0"></div>
         <button id="cloudBackupBtn" style="padding:12px;background:#0284c7;color:#fff;border:none;border-radius:8px;width:100%;font-size:14px;margin-bottom:8px" onclick="cloudBackup()">☁️ 立即备份到云端</button>
         <button id="cloudRestoreBtn" style="padding:12px;background:#16a34a;color:#fff;border:none;border-radius:8px;width:100%;font-size:14px;margin-bottom:8px" onclick="cloudRestore()">🔄 从云端恢复</button>
         <button id="cloudAutoToggle" style="padding:10px;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:8px;width:100%;font-size:13px" onclick="toggleAutoBackup()">⚙️ 自动备份：开启中</button>
@@ -948,6 +951,88 @@ async function cloudRestore(autoRestore = false){
     }finally{
         if(btn){ btn.disabled = false; btn.innerHTML = "🔄 从云端恢复"; }
     }
+}
+
+/* =========================================================
+   本地备份/恢复（导出/导入 JSON 文件）
+   ========================================================= */
+/* 导出本地备份（下载 JSON 文件） */
+function localBackup(){
+    const data = collectProgressData();
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const date = new Date();
+    const pad = n => n < 10 ? '0' + n : n;
+    a.download = `electric_backup_${date.getFullYear()}${pad(date.getMonth()+1)}${pad(date.getDate())}_${pad(date.getHours())}${pad(date.getMinutes())}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    const status = document.getElementById('cloudStatus');
+    if(status){
+        status.innerHTML = `✅ 已导出备份文件<br><small>请保存到手机或 iCloud Drive</small>`;
+    }
+    alert(`✅ 备份文件已下载！\n\n文件名：${a.download}\n\n建议保存到：\n- iCloud Drive\n- 微信文件传输助手\n- 邮箱发给自己`);
+}
+
+/* 导入本地备份（选择 JSON 文件） */
+function localRestore(){
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json,.json';
+    input.onchange = function(e){
+        const file = e.target.files[0];
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = function(ev){
+            try{
+                const data = JSON.parse(ev.target.result);
+                if(!data || data.version !== 2){
+                    alert('❌ 文件格式不正确或版本不兼容');
+                    return;
+                }
+                if(!confirm(`从本地备份恢复？\n\n备份时间：${new Date(data.lastUpdated).toLocaleString()}\n完成：${data.stats?.completedCount || 0} 题\n错题：${data.stats?.wrongCount || 0} 题\n收藏：${data.stats?.favoriteCount || 0} 题\n\n注意：将与本地数据合并（取并集），不会丢失当前进度`)){
+                    return;
+                }
+                // 合并本地和备份文件数据（取并集）
+                const backupWrong = new Set(data.wrongList || []);
+                const backupFinished = new Set(data.finished || []);
+                const backupFav = new Set(data.favoriteList || []);
+                
+                wrongList.forEach(id => backupWrong.add(id));
+                finished.forEach(id => backupFinished.add(id));
+                favoriteList.forEach(id => backupFav.add(id));
+                
+                wrongList = Array.from(backupWrong);
+                finished = Array.from(backupFinished);
+                favoriteList = Array.from(backupFav);
+                
+                // 清理无效 id
+                const validIds = new Set(questions.map(q => q.id));
+                wrongList = wrongList.filter(id => validIds.has(id));
+                finished = finished.filter(id => validIds.has(id));
+                favoriteList = favoriteList.filter(id => validIds.has(id));
+                
+                saveStorage(); saveFinish(); saveFav();
+                rebuildRecent(); rebuildAllVisible(); updateAllUI();
+                renderAll();
+                
+                const status = document.getElementById('cloudStatus');
+                if(status){
+                    status.innerHTML = `✅ 本地恢复成功！<br>完成 ${finished.length} 题 / 错题 ${wrongList.length} / 收藏 ${favoriteList.length}`;
+                }
+                alert(`✅ 恢复成功！\n\n合并后：\n完成 ${finished.length} 题\n错题 ${wrongList.length} 道\n收藏 ${favoriteList.length} 道`);
+            }catch(err){
+                alert('❌ 读取文件失败：' + err.message);
+            }
+        };
+        reader.readAsText(file);
+    };
+    input.click();
 }
 
 /* 自动备份开关 */
