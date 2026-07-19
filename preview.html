@@ -798,97 +798,82 @@ function applyProgressData(data, autoRestore = false){
     return true;
 }
 
-/* 备份到云端（通过 GitHub Gist API） */
+/* 备份到云端（通过 Vercel 后端代理，无需 Token） */
 async function cloudBackup(){
     if(!currentUsername){
         alert("请先登录后再使用云端备份");
         showLoginModal();
         return;
     }
-    if(!gistToken){
-        const token = prompt("首次使用云端备份，需要配置 GitHub Token\n\n请前往 https://github.com/settings/tokens/new\n1. 勾选 gist 权限\n2. 创建 token\n3. 把 token 粘贴到这里：");
-        if(!token) return;
-        gistToken = token.trim();
-        localStorage.setItem("electric_gist_token", gistToken);
-    }
     const btn = document.getElementById("cloudBackupBtn");
     const status = document.getElementById("cloudStatus");
-    btn.disabled = true;
-    btn.innerHTML = "⏳ 备份中...";
-    status.innerText = "正在上传到云端...";
+    if(btn){ btn.disabled = true; btn.innerHTML = "⏳ 备份中..."; }
+    if(status){ status.innerText = "正在上传到云端..."; }
     try{
         const data = collectProgressData();
-        const resp = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
-            method: 'PATCH',
-            headers: {
-                'Authorization': `Bearer ${gistToken}`,
-                'Content-Type': 'application/json'
-            },
+        const resp = await fetch('/api/progress', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                description: "高压电工错题集 - 做题记录云端同步",
-                files: {
-                    [getUserFilename()]: {
-                        content: JSON.stringify(data, null, 2)
-                    }
-                }
+                username: currentUsername,
+                data: data
             })
         });
-        if(!resp.ok){
-            const err = await resp.json();
-            throw new Error(err.message || `HTTP ${resp.status}`);
+        const result = await resp.json();
+        if(!resp.ok || !result.success){
+            throw new Error(result.error || `HTTP ${resp.status}`);
         }
         const time = new Date().toLocaleString();
         localStorage.setItem("electric_last_backup", time);
-        status.innerHTML = `✅ 备份成功！${time}<br>👤 用户：${currentUsername || '未登录'} | 完成 ${data.stats.completedCount} 题 / 错题 ${data.stats.wrongCount} / 收藏 ${data.stats.favoriteCount}`;
-        btn.innerHTML = "☁️ 立即备份到云端";
-    }catch(e){
-        status.innerHTML = `❌ 备份失败：${e.message}<br><small>Token 可能失效，请前往 GitHub 重新生成</small>`;
-        btn.innerHTML = "☁️ 立即备份到云端";
-        if(e.message.includes('Bad credentials') || e.message.includes('401')){
-            localStorage.removeItem("electric_gist_token");
-            gistToken = "";
+        if(status){
+            status.innerHTML = `✅ 备份成功！${time}<br>👤 用户：${currentUsername} | 完成 ${data.stats.completedCount} 题 / 错题 ${data.stats.wrongCount} / 收藏 ${data.stats.favoriteCount}`;
         }
+        if(btn){ btn.innerHTML = "☁️ 立即备份到云端"; }
+    }catch(e){
+        if(status){
+            status.innerHTML = `❌ 备份失败：${e.message}<br><small>请稍后重试，或联系助手</small>`;
+        }
+        if(btn){ btn.innerHTML = "☁️ 立即备份到云端"; }
     }finally{
-        btn.disabled = false;
+        if(btn){ btn.disabled = false; }
     }
 }
 
-/* 从云端恢复 */
+/* 从云端恢复（通过 Vercel 后端代理，无需 Token） */
 async function cloudRestore(autoRestore = false){
     const btn = document.getElementById("cloudRestoreBtn");
     const status = document.getElementById("cloudStatus");
     if(btn){ btn.disabled = true; btn.innerHTML = "⏳ 恢复中..."; }
-    if(autoRestore){
+    if(autoRestore && status){
         status.innerText = "正在从云端下载...";
     }
     try{
-        const filename = getUserFilename();
-        // 用 Gist API 获取整个 Gist，再从 files 里按文件名取
-        const resp = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
-            headers: gistToken
-                ? { 'Authorization': `Bearer ${gistToken}` }
-                : {},
+        const resp = await fetch(`/api/progress?username=${encodeURIComponent(currentUsername)}`, {
             cache: 'no-store'
         });
         if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json();
-        const file = data.files && data.files[filename];
-        if(!file || !file.content){
+        const result = await resp.json();
+        if(!result.success){
+            throw new Error(result.error || 'Unknown error');
+        }
+        if(!result.found){
             // 该用户还没有云端记录
-            if(autoRestore){
-                status.innerHTML = `👤 已登录：<b>${currentUsername}</b><br><small>云端暂无该用户的做题记录</small>`;
-            }else{
+            if(autoRestore && status){
+                status.innerHTML = `👤 已登录：<b>${currentUsername}</b><br><small>云端暂无该用户的做题记录，开始做题后会自动备份</small>`;
+            }else if(status){
                 status.innerHTML = `ℹ️ 云端暂无该用户的做题记录`;
             }
             return;
         }
-        const parsed = JSON.parse(file.content);
-        const success = applyProgressData(parsed, autoRestore);
-        if(success){
-            status.innerHTML = `✅ 恢复成功！<br>👤 用户：${currentUsername || '未登录'}<br>完成 ${parsed.stats?.completedCount || 0} 题`;
+        const data = result.data;
+        const success = applyProgressData(data, autoRestore);
+        if(success && status){
+            status.innerHTML = `✅ 恢复成功！<br>👤 ${currentUsername} | 完成 ${data.stats?.completedCount || 0} 题`;
         }
     }catch(e){
-        status.innerHTML = `❌ 恢复失败：${e.message}`;
+        if(status){
+            status.innerHTML = `❌ 恢复失败：${e.message}`;
+        }
     }finally{
         if(btn){ btn.disabled = false; btn.innerHTML = "🔄 从云端恢复"; }
     }
@@ -909,7 +894,7 @@ function updateAutoBackupUI(){
 /* 自动备份（每次做题后触发） */
 let autoBackupTimer = null;
 function scheduleAutoBackup(){
-    if(!autoBackupEnabled || !gistToken || !currentUsername) return;  // 增加用户名检查
+    if(!autoBackupEnabled || !currentUsername) return;  // 已登录且开启自动备份才执行
     // 防抖：3 秒内多次做题只备份一次
     if(autoBackupTimer) clearTimeout(autoBackupTimer);
     autoBackupTimer = setTimeout(() => {
