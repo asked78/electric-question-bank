@@ -201,6 +201,9 @@
         <div class="analysis" id="recentAnalysis"></div>
     </div>
     <div class="empty" id="recentEmpty">暂无最近新增题目（按题目入库时间倒序展示）</div>
+    <div class="reset-wrap">
+        <button style="padding:13px;background:#f97316;color:#fff;border:none;border-radius:8px;width:100%;font-size:15px" onclick="clearUserAddedQuestions()">🧹 清空所有用户添加的题目（恢复到 71 道种子题）</button>
+    </div>
 </div>
 
 <!-- 回收站 -->
@@ -554,6 +557,33 @@ function clearStorage(){
     saveStorage();saveFinish();
     alert("已重置错题和完成记录");
     renderAll();
+}
+/* 清空所有用户添加的题目（恢复到 71 道种子题） */
+function clearUserAddedQuestions(){
+    const total = questions.length;
+    const seedCount = SEED_QUESTIONS.length;
+    const userCount = total - seedCount;
+    if(userCount <= 0){
+        alert("没有用户添加的题目（当前题库就是原始 71 道种子题）");
+        return;
+    }
+    if(!confirm(`确认清空用户添加的题目？\n\n当前题库共 ${total} 道\n其中种子题：${seedCount} 道（保留）\n用户添加：${userCount} 道（将被清空）\n\n注意：错题、收藏、完成记录中如果引用了被删的题，会自动清理`)){
+        return;
+    }
+    // 保留前 seedCount 道（按 addedAt 最小的种子题）
+    // 先排序找出种子题（种子题是按顺序加入的，addedAt 是 now - (len-i)*1000）
+    const seedAt = SEED_QUESTIONS.map((_,i)=>0).length;
+    // 简单方案：保留 addedAt 最小的 seedCount 道（即最早的）
+    questions = questions.slice().sort((a,b)=>(a.addedAt||0)-(b.addedAt||0)).slice(0, seedCount);
+    saveBank();
+    // 清理错题/收藏/完成记录中越界的 id
+    wrongList = wrongList.filter(i=>i>=0 && i<questions.length);
+    finished = finished.filter(i=>i>=0 && i<questions.length);
+    favoriteList = favoriteList.filter(i=>i>=0 && i<questions.length);
+    saveStorage();saveFinish();saveFav();
+    rebuildRecent();rebuildAllVisible();updateAllUI();
+    renderAll();renderRecent();
+    alert(`✅ 已清空 ${userCount} 道用户添加的题目\n当前题库剩余 ${questions.length} 道种子题`);
 }
 function redoCurrentQuestion(){
     const id = allVisibleList[allIndex];
